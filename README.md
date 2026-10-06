@@ -103,21 +103,22 @@ Il pulsante **“Carica alimenti di esempio”** inserisce i 32 alimenti di
 [`data/cibi.csv`](./data/cibi.csv) senza bisogno di importare nulla.
 Puoi anche **esportare** il database corrente o **scaricare un modello** CSV vuoto.
 
-## 🤖 Algoritmo greedy (resto della giornata)
+## 🤖 Algoritmo greedy (score per macro)
 
 Nel tab **Diario**, sotto i totali, l'app suggerisce **cosa mangiare per completare
-la giornata**. È un algoritmo greedy:
+la giornata** valutando **tutta la tabella dei cibi**:
 
-1. Calcola il residuo `target − consumato` per kcal, proteine, grassi e carboidrati.
-2. Ad ogni passo valuta ogni alimento del database con una porzione che copre il
-   residuo calorico (limitata a `Min`/`Max`), e sceglie quello che **riduce di più
-   l'errore** verso i target.
-3. L'errore pesa di più le proteine (×3) e penalizza il superamento delle calorie;
-   ogni alimento si usa una volta sola e al massimo 2 per categoria.
-4. Si ferma quando restano < 40 kcal o quando nessun alimento migliora la situazione.
+1. Calcola il fabbisogno residuo `target − consumato` per kcal, proteine, grassi e carboidrati.
+2. Per ogni alimento, con la sua porzione consigliata (`Max`, altrimenti `Min`, altrimenti 100 g),
+   calcola uno **score per macro**: quanto la porzione copre il residuo di quel macro
+   (100% = lo copre esattamente; chi sfora viene penalizzato con `1/ratio`).
+3. Combina gli score in un **punteggio totale**, pesando di più i macro più carenti e in
+   particolare le proteine (pesi: P 0.40, C 0.25, G 0.20, kcal 0.15).
+4. Ordina e restituisce i **primi 10** alimenti, con la possibilità di riordinare per
+   singolo macro (proteine / grassi / carboidrati / calorie) ed escludere i cibi già nel diario.
 
-Per ogni suggerimento vedi alimento, porzione, macro e un pulsante **Aggiungi** per
-inserirlo direttamente nel diario.
+Ogni riga mostra lo score e i grammi apportati per ciascun macro, più un pulsante
+**Aggiungi** per inserire la porzione nel diario.
 
 ## Prossimi passi possibili
 
