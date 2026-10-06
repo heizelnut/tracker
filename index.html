@@ -23,14 +23,14 @@
 <section class="panel" id="panel-dashboard">
 <section class="grid" aria-label="Riepilogo"><div class="card"><div class="stat-label">Peso attuale</div><div class="stat" id="currentWeight">—</div><div class="trend" id="weightTrend">Nessun dato</div></div><div class="card"><div class="stat-label">Media kcal 7 giorni</div><div class="stat" id="avgCalories">—</div><div class="trend">target: 1.715 kcal/die</div></div><div class="card"><div class="stat-label">Media peso 7 giorni</div><div class="stat" id="avgWeight">—</div><div class="trend">misurazioni registrate</div></div><div class="card"><div class="stat-label">Registrazioni</div><div class="stat" id="entryCount">0</div><div class="trend">salvate localmente</div></div></section>
 <section class="grid grid3" aria-label="Media macro 7 giorni"><div class="card"><div class="stat-label">Media proteine 7 gg</div><div class="stat" id="avgP">—</div></div><div class="card"><div class="stat-label">Media grassi 7 gg</div><div class="stat" id="avgG">—</div></div><div class="card"><div class="stat-label">Media carboidrati 7 gg</div><div class="stat" id="avgC">—</div></div></section>
-<section class="card section"><h2>Nuova registrazione</h2><div class="formgrid"><div class="field"><label for="date">Data</label><input id="date" type="date"></div><div class="field"><label for="weight">Peso (kg)</label><input id="weight" type="number" inputmode="decimal" step="0.1" min="30" max="250" placeholder="72,7"></div><div class="field"><label for="calories">Calorie introdotte</label><input id="calories" type="number" inputmode="numeric" step="1" min="500" max="6000" placeholder="1800"></div><div class="field"><label for="dayType">Tipo giornata</label><select id="dayType"><option value="training">Allenamento · 1800 kcal</option><option value="rest">Riposo · 1650 kcal</option></select></div><div class="actions"><button class="primary" id="save">Salva</button><button class="ghost" id="today">Oggi</button></div></div><div class="notice">Target: 1.800 kcal nei 3 giorni di allenamento e 1.650 kcal nei 4 giorni di riposo. Se compili il <strong>Diario</strong>, le calorie e i macro vengono calcolati automaticamente.</div></section>
+<section class="card section"><h2>Nuova registrazione</h2><div class="formgrid"><div class="field"><label for="date">Data</label><input id="date" type="date"></div><div class="field"><label for="weight">Peso (kg)</label><input id="weight" class="dec" type="text" inputmode="decimal" autocomplete="off" placeholder="72.7"></div><div class="field"><label for="calories">Calorie introdotte</label><input id="calories" class="int" type="text" inputmode="numeric" autocomplete="off" placeholder="1800"></div><div class="field"><label for="dayType">Tipo giornata</label><select id="dayType"><option value="training">Allenamento · 1800 kcal</option><option value="rest">Riposo · 1650 kcal</option></select></div><div class="actions"><button class="primary" id="save">Salva</button><button class="ghost" id="today">Oggi</button></div></div><div class="notice">Target: 1.800 kcal nei 3 giorni di allenamento e 1.650 kcal nei 4 giorni di riposo. Se compili il <strong>Diario</strong>, le calorie e i macro vengono calcolati automaticamente.</div></section>
 <section class="card section"><h2>Andamento del peso</h2><div class="chart-wrap"><canvas class="chart" id="chart"></canvas></div></section>
 </section>
 
 <!-- ============ DIARIO ============ -->
 <section class="panel" id="panel-diary" hidden>
 <section class="card section" id="diarySection"><h2>Diario alimentare</h2>
-<div class="formgrid"><div class="field"><label for="diaryDate">Data</label><input id="diaryDate" type="date"></div><div class="field"><label for="diaryType">Tipo giornata</label><select id="diaryType"><option value="training">Allenamento · 1800 kcal</option><option value="rest">Riposo · 1650 kcal</option></select></div><div class="field"><label for="diaryFood">Alimento</label><input id="diaryFood" list="foodOptions" placeholder="Cerca alimento…"><datalist id="foodOptions"></datalist></div><div class="field"><label for="diaryGrams">Grammi</label><input id="diaryGrams" type="number" inputmode="decimal" step="1" min="1" placeholder="100"><div class="hint" id="gramsHint"></div></div><div class="actions"><button class="primary" id="diaryAdd">Aggiungi</button></div></div>
+<div class="formgrid"><div class="field"><label for="diaryDate">Data</label><input id="diaryDate" type="date"></div><div class="field"><label for="diaryType">Tipo giornata</label><select id="diaryType"><option value="training">Allenamento · 1800 kcal</option><option value="rest">Riposo · 1650 kcal</option></select></div><div class="field"><label for="diaryFood">Alimento</label><input id="diaryFood" list="foodOptions" placeholder="Cerca alimento…"><datalist id="foodOptions"></datalist></div><div class="field"><label for="diaryGrams">Grammi</label><input id="diaryGrams" class="dec" type="text" inputmode="decimal" autocomplete="off" placeholder="100"><div class="hint" id="gramsHint"></div></div><div class="actions"><button class="primary" id="diaryAdd">Aggiungi</button></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Alimento</th><th>Q.tà</th><th>P</th><th>G</th><th>C</th><th>kcal</th><th></th></tr></thead><tbody id="diaryItems"></tbody></table></div>
 <div class="totals" id="diaryTotals"></div>
 <div class="notice">Aggiungi gli alimenti consumati: i totali di kcal e macro vengono confrontati con il target della giornata. Nel tab <strong>Cibi</strong> premi “Aggiungi” su un alimento per compilarlo qui.</div></section>
@@ -42,14 +42,14 @@
 <section class="card section formcard"><h3 id="foodFormTitle">Aggiungi alimento</h3>
 <form id="foodForm" class="formgrid" autocomplete="off">
 <div class="field"><label for="fName">Nome</label><input id="fName" placeholder="Es. Petto di pollo" required></div>
-<div class="field"><label for="fP">Proteine (g/100g)</label><input id="fP" type="number" inputmode="decimal" step="0.1" min="0" placeholder="0"></div>
-<div class="field"><label for="fG">Grassi (g/100g)</label><input id="fG" type="number" inputmode="decimal" step="0.1" min="0" placeholder="0"></div>
-<div class="field"><label for="fC">Carboidrati (g/100g)</label><input id="fC" type="number" inputmode="decimal" step="0.1" min="0" placeholder="0"></div>
-<div class="field"><label for="fKcal">kcal (vuoto = calcolate)</label><input id="fKcal" type="number" inputmode="numeric" step="1" min="0" placeholder="auto"></div>
-<div class="field"><label for="fMin">Min (g)</label><input id="fMin" type="number" inputmode="numeric" step="1" min="0" placeholder="—"></div>
-<div class="field"><label for="fMax">Max (g)</label><input id="fMax" type="number" inputmode="numeric" step="1" min="0" placeholder="—"></div>
+<div class="field"><label for="fP">Proteine (g/100g)</label><input id="fP" class="dec" type="text" inputmode="decimal" autocomplete="off" placeholder="0"></div>
+<div class="field"><label for="fG">Grassi (g/100g)</label><input id="fG" class="dec" type="text" inputmode="decimal" autocomplete="off" placeholder="0"></div>
+<div class="field"><label for="fC">Carboidrati (g/100g)</label><input id="fC" class="dec" type="text" inputmode="decimal" autocomplete="off" placeholder="0"></div>
+<div class="field"><label for="fKcal">kcal (vuoto = calcolate)</label><input id="fKcal" class="int" type="text" inputmode="numeric" autocomplete="off" placeholder="auto"></div>
+<div class="field"><label for="fMin">Min (g)</label><input id="fMin" class="int" type="text" inputmode="numeric" autocomplete="off" placeholder="—"></div>
+<div class="field"><label for="fMax">Max (g)</label><input id="fMax" class="int" type="text" inputmode="numeric" autocomplete="off" placeholder="—"></div>
 <div class="field"><label for="fCat">Categoria</label><input id="fCat" placeholder="proteina,latticino"></div>
-<div class="field"><label for="fPiece">Pezzo (g)</label><input id="fPiece" type="number" inputmode="numeric" step="1" min="0" placeholder="—"></div>
+<div class="field"><label for="fPiece">Pezzo (g)</label><input id="fPiece" class="int" type="text" inputmode="numeric" autocomplete="off" placeholder="—"></div>
 <div class="actions"><button class="primary" type="submit" id="foodSubmit">Aggiungi alimento</button><button class="ghost" type="button" id="foodCancel" hidden>Annulla</button></div>
 </form>
 <div class="notice">I valori sono per 100 g. Se lasci <code>kcal</code> vuoto viene calcolata da P×4 + C×4 + G×9.</div>
@@ -198,6 +198,12 @@ function render(){
  if(currentTab==='dashboard')drawChart(sorted);
 }
 window.addEventListener('resize',()=>{if(currentTab==='dashboard')drawChart([...entries].sort((a,b)=>a.date.localeCompare(b.date)))});
+/* ---------- Separatore decimale: sempre "." ---------- */
+function normalizeDecimal(el){const v=el.value;let s=v.replace(/[^\d.,]/g,'');const lc=s.lastIndexOf(','),ld=s.lastIndexOf('.');if(lc>=0&&ld>=0){s=lc>ld?s.replace(/\./g,'').replace(/,/g,'.'):s.replace(/,/g,'')}else if(lc>=0){s=s.replace(/,/g,'.')}const i=s.indexOf('.');if(i>=0)s=s.slice(0,i+1)+s.slice(i+1).replace(/\./g,'');if(s!==v)el.value=s}
+function normalizeInt(el){const s=el.value.replace(/[^\d]/g,'');if(s!==el.value)el.value=s}
+document.querySelectorAll('input.dec').forEach(el=>el.addEventListener('input',()=>normalizeDecimal(el)));
+document.querySelectorAll('input.int').forEach(el=>el.addEventListener('input',()=>normalizeInt(el)));
+
 renderFoods();renderDiary();render();showTab(currentTab);autoSync();
 </script>
 </body></html>
