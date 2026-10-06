@@ -120,6 +120,19 @@ la giornata** valutando **tutta la tabella dei cibi**:
 Ogni riga mostra lo score e i grammi apportati per ciascun macro, più un pulsante
 **Aggiungi** per inserire la porzione nel diario.
 
+## 🔄 Sincronizzare PC e telefono
+
+`localStorage` è **per-dispositivo**: non si sincronizza da solo. Le opzioni, dalla più semplice:
+
+1. **Backup JSON (implementato)** — nel tab in fondo all'app, *Esporta backup (.json)*
+sul PC e *Importa backup* sul telefono (o viceversa). Sposta il file con iCloud Drive,
+Google Drive, AirDrop, WhatsApp, email. Zero account, zero server.
+2. **Servizio chiave-valore gratuito** (es. jsonbin.io) — l'app salva/legge un piccolo
+JSON su cloud con una chiave. Automatico, ma richiede una registrazione.
+3. **Backend** (Supabase/Firebase) — sync in tempo reale multi-dispositivo, ma più setup.
+
+Il backup contiene **peso/calorie, diario e database cibi** (`{app, version, exportedAt, entries, foods, diary}`).
+
 ## Prossimi passi possibili
 
 - [x] Tracciamento macro giornalieri (proteine, carboidrati, grassi)
