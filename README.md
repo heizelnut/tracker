@@ -127,6 +127,10 @@ Giorno 1 — Upper A;Alzate laterali;3;12-15;60-90";
 - Colonne `Sessione` e `Note` opzionali.
 - L'import **unisce**: stessa sessione + esercizio = aggiorna, altrimenti aggiunge.
 - Puoi anche **esportare** il programma o scaricare un **modello** CSV.
+- **⏱ Timer recupero fullscreen**: ogni esercizio ha un pulsante che avvia un countdown
+a schermo intero col tempo di recupero ricavato dalla colonna *Recupero*
+(`2-3'` → 180s, `60-90"` → 90s, `1'30"` → 90s). Include pausa, ±15s, anello di
+progresso, beep e vibrazione a fine recupero. Esc/Chiudi per uscire.
 
 ## 🤖 Algoritmo greedy (score per macro)
 
