@@ -1,0 +1,14 @@
+# Keep secrets and local state out of the image.
+.env
+.env.*
+!*.env.example
+
+.git
+.gitignore
+data
+tmp
+bin
+*.log
+.DS_Store
+docs
+*.md

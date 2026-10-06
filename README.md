@@ -10,7 +10,9 @@ riducendo gradualmente il grasso, con un deficit calorico moderato.
 
 | File | Descrizione |
 |---|---|
-| [`index.html`](./index.html) | App web (single file) per tracciare peso, calorie e macro. Salva tutto in **LocalStorage**, nessun server. |
+| [`index.html`](./index.html) | App web (single file) per tracciare peso, calorie e macro. Salva tutto in **LocalStorage**. |
+| [`cmd/server`](./cmd/server) | Backend minimale (Go, stdlib) che serve l'app e sincronizza un blob opaco per chiave. |
+| [`Dockerfile`](./Dockerfile) · [`docker-compose.yml`](./docker-compose.yml) | Self-hosting in un container. |
 | [`data/cibi.csv`](./data/cibi.csv) | Database alimenti d'esempio, esportato dal foglio **“Cibo”** di `~/Documents/dieta/macros.xlsx`. |
 | [`docs/scheda-allenamento.md`](./docs/scheda-allenamento.md) | Scheda palestra 3 giorni (2× upper / 2× lower). |
 | [`docs/piano-nutrizionale.md`](./docs/piano-nutrizionale.md) | Target calorici e macro (giorni allenamento vs riposo). |
@@ -120,18 +122,62 @@ la giornata** valutando **tutta la tabella dei cibi**:
 Ogni riga mostra lo score e i grammi apportati per ciascun macro, più un pulsante
 **Aggiungi** per inserire la porzione nel diario.
 
-## 🔄 Sincronizzare PC e telefono
+## 🐳 Self-hosting (docker compose)
 
-`localStorage` è **per-dispositivo**: non si sincronizza da solo. Le opzioni, dalla più semplice:
+Il repo include un backend **volutamente stupido**: serve l'app e salva un
+**blob opaco** per chiave su disco. Niente database, niente schema, niente
+autenticazione — è pensato per girare in **LAN / dietro Tailscale**, non esposto
+su internet. Non conosce peso, pasti o macro: fa solo `GET`/`PUT` di byte.
 
-1. **Backup JSON (implementato)** — nel tab in fondo all'app, *Esporta backup (.json)*
-sul PC e *Importa backup* sul telefono (o viceversa). Sposta il file con iCloud Drive,
-Google Drive, AirDrop, WhatsApp, email. Zero account, zero server.
-2. **Servizio chiave-valore gratuito** (es. jsonbin.io) — l'app salva/legge un piccolo
-JSON su cloud con una chiave. Automatico, ma richiede una registrazione.
-3. **Backend** (Supabase/Firebase) — sync in tempo reale multi-dispositivo, ma più setup.
+### Avvio rapido
 
-Il backup contiene **peso/calorie, diario e database cibi** (`{app, version, exportedAt, entries, foods, diary}`).
+```bash
+cp .env.example .env
+docker compose up --build
+# apri http://localhost:8080
+```
+
+### API
+
+| Metodo | Path | Descrizione |
+|---|---|---|
+| `GET` | `/api/kv/{key}` | Legge il blob (header `X-Updated-At` col timestamp) |
+| `PUT` | `/api/kv/{key}` | Scrive il blob (max 8 MiB) |
+| `DELETE` | `/api/kv/{key}` | Elimina il blob |
+| `GET` | `/healthz` | Healthcheck |
+| `*` | `/` | Serve l'app statica (`index.html`) |
+
+I blob finiscono in `DATA_DIR` (un file per chiave, scrittura atomica
+temp+rename). Le chiavi sono `[A-Za-z0-9_-]{1,64}`.
+
+### Sync nell'app
+
+In fondo all'app c'è la card **“Sincronizzazione tra dispositivi”**: imposta
+l'URL del server (vuoto = stesso server che serve l'app), una **chiave**
+(default `default`) e attiva **Auto-sync**.
+
+- ogni modifica viene inviata al server con debounce di 1,5 s;
+- all'avvio l'app confronta `X-Updated-At` con l'ultimo salvataggio locale e
+  scarica la versione più recente (last-write-wins).
+
+### Sviluppo
+
+```bash
+make run     # :8080, serve ./index.html, blob in ./data
+make test    # test Go
+make image REGISTRY=registry.lab.heiz.cc   # build + push (linux/arm64)
+```
+
+### Homelab
+
+Lo stack per l'homelab è in `~/code/nix` → [`hosts/lab/docker/tracker/`](../nix/hosts/lab/docker/tracker)
+(Traefik + registry privato, `tracker.lab.heiz.cc`).
+
+## 🔄 Alternativa senza server: backup JSON
+
+Se non vuoi self-hostare, in fondo all'app ci sono **Esporta backup (.json)** e
+**Importa backup**: sposti il file con iCloud Drive / Google Drive / AirDrop /
+WhatsApp. Contiene peso/calorie, diario e database cibi.
 
 ## Prossimi passi possibili
 

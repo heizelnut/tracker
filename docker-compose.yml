@@ -1,0 +1,48 @@
+# tracker — self-hosted sync backend for the Ricomposizione progress tracker.
+# One service: a static Go binary that serves the single-file app and stores
+# the synced blob on disk. No database, no dependencies.
+#
+# Quick start:
+#   cp .env.example .env
+#   docker compose up --build
+#   open http://localhost:8080
+
+services:
+  tracker:
+    build: .
+    image: tracker:latest
+    container_name: tracker
+    restart: unless-stopped
+
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "8080"
+      DATA_DIR: /data
+      STATIC_DIR: /app
+
+    volumes:
+      - tracker-data:/data
+
+    ports:
+      # For quick local use. Remove when Traefik fronts it.
+      - "${PORT:-8080}:8080"
+
+    # --- Homelab deployment (Traefik + private registry):
+    #     see README → "Self-hosting / homelab".
+    # networks:
+    #   - proxy
+    # labels:
+    #   - traefik.enable=true
+    #   - traefik.http.routers.tracker.rule=Host(`tracker.${DOMAIN}`)
+    #   - traefik.http.routers.tracker.entrypoints=websecure
+    #   - traefik.http.services.tracker.loadbalancer.server.port=8080
+
+# networks:
+#   proxy:
+#     external: true
+#     name: proxy
+
+volumes:
+  tracker-data:

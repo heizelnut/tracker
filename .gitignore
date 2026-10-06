@@ -9,3 +9,14 @@
 # Log / temporanei
 *.log
 tmp/
+bin/
+
+# Go
+/tracker
+
+# Env e dati locali (il CSV di esempio resta versionato)
+.env
+.env.*
+!.env.example
+/data/*
+!/data/cibi.csv

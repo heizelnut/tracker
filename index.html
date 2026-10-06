@@ -67,6 +67,7 @@
 </section>
 
 <section class="card section" id="backupCard"><h2>Backup e sincronizzazione</h2><div class="toolbar"><button class="ghost" id="exportBackup">Esporta backup (.json)</button><label class="ghost filebtn" for="importBackup" style="background:var(--surface2);color:var(--text);border:1px solid var(--border)">Importa backup</label><input id="importBackup" type="file" accept="application/json,.json" hidden><button class="danger" id="clear">Cancella tutti i dati</button></div><div class="notice">Il backup contiene <strong>peso/calorie, diario e database cibi</strong>. Spostalo tra PC e telefono con iCloud Drive, Google Drive, AirDrop o WhatsApp, poi importalo sull'altro dispositivo per allineare i dati. L'import sostituisce i dati presenti.</div></section>
+<section class="card section" id="syncCard"><h2>Sincronizzazione tra dispositivi</h2><div class="formgrid"><div class="field"><label for="syncUrl">URL server</label><input id="syncUrl" placeholder="https://tracker.lab.heiz.cc — vuoto = stesso server"></div><div class="field"><label for="syncKey">Chiave</label><input id="syncKey" placeholder="default"></div><div class="field"><label>Auto-sync</label><label class="checkline" style="height:46px"><input type="checkbox" id="syncAuto"> Sincronizza automaticamente</label></div><div class="actions"><button class="primary" id="syncPush">Salva sul server</button><button class="ghost" id="syncPull">Carica dal server</button></div></div><div class="notice" id="syncStatus">Backend self-hosted incluso in questo repo (<code>docker-compose.yml</code>). Il server salva solo un blob opaco per chiave: non conosce peso, pasti o macro.</div></section>
 <footer class="footer"><span>LocalStorage · nessun account · nessun server</span></footer>
 </main></div>
 <script>
@@ -80,7 +81,7 @@ const $=id=>document.getElementById(id);
 const uid=()=>crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(16).slice(2);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function load(k,def){try{const v=JSON.parse(localStorage.getItem(k));return v==null?def:v}catch(e){return def}}
-function save(k,v){localStorage.setItem(k,JSON.stringify(v))}
+function save(k,v){localStorage.setItem(k,JSON.stringify(v));if(k===KEY||k===FOODS_KEY||k===DIARY_KEY){if(!syncing)localStorage.setItem(SAVEDAT_KEY,new Date().toISOString());scheduleSync()}}
 function isoToday(){return new Date().toISOString().slice(0,10)}
 function toNum(v){if(v==null)return NaN;let s=String(v).trim().replace(/[^\d.,\-]/g,'');if(s==='')return NaN;if(s.includes(',')&&s.includes('.')){s=s.lastIndexOf(',')>s.lastIndexOf('.')?s.replace(/\./g,'').replace(',','.'):s.replace(/,/g,'')}else if(s.includes(',')){s=s.replace(',','.')}return parseFloat(s)}
 function fmt1(n){return (Math.round((Number(n)||0)*10)/10).toFixed(1).replace('.',',')}
@@ -93,6 +94,7 @@ let diary=load(DIARY_KEY,{});
 let editingFoodId=null;
 let planSort='total';
 let currentTab=load(TAB_KEY,'dashboard');
+let syncing=false,syncTimer=null;
 
 function entryFor(date){return entries.find(e=>e.date===date)}
 function diaryGet(date){return diary[date]||null}
@@ -148,6 +150,20 @@ function applyBackup(b){entries=Array.isArray(b.entries)?b.entries:[];foods=Arra
 $('exportBackup').onclick=()=>download('ricomposizione-backup-'+isoToday()+'.json',JSON.stringify(backupData(),null,1),'application/json');
 $('importBackup').onchange=e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const b=JSON.parse(String(reader.result));if(!b||typeof b!=='object'||!('entries' in b||'diary' in b||'foods' in b))throw new Error('file di backup non valido');if(!confirm('Importare il backup? I dati attuali verranno sostituiti.'))return;applyBackup(b);alert('Backup importato: '+entries.length+' registrazioni, '+foods.length+' alimenti, '+Object.keys(diary).length+' giornate di diario.')}catch(err){alert('Errore import backup: '+err.message)}};reader.readAsText(file,'utf-8');e.target.value=''};
 
+/* ---------- Sync server (blob opaco) ---------- */
+const SYNC_KEY='ricomposizione_sync_v1';
+const SAVEDAT_KEY='ricomposizione_savedat_v1';
+function syncCfg(){return load(SYNC_KEY,{url:'',key:'default',auto:false})}
+function syncBase(){const u=(syncCfg().url||'').trim();return u?u.replace(/\/+$/,''):''}
+function syncEndpoint(){const c=syncCfg();const key=((c.key||'default').trim())||'default';return syncBase()+'/api/kv/'+encodeURIComponent(key)}
+function syncHeaders(){return {'Content-Type':'application/json'}}
+function setSyncStatus(msg,bad){const el=$('syncStatus');if(!el)return;el.textContent=msg;el.style.color=bad?'var(--danger)':''}
+function scheduleSync(){if(syncing)return;const c=syncCfg();if(!c.auto)return;clearTimeout(syncTimer);syncTimer=setTimeout(()=>serverPush(true),1500)}
+async function serverPush(silent){try{const res=await fetch(syncEndpoint(),{method:'PUT',headers:syncHeaders(),body:JSON.stringify(backupData())});if(!res.ok)throw new Error('HTTP '+res.status);localStorage.setItem(SAVEDAT_KEY,new Date().toISOString());setSyncStatus('Salvato sul server · '+new Date().toLocaleTimeString('it-IT'))}catch(e){setSyncStatus('Errore salvataggio: '+e.message,true);if(!silent)alert('Errore sync: '+e.message)}}
+async function serverPull(silent){try{const res=await fetch(syncEndpoint(),{headers:syncHeaders()});if(res.status===404){setSyncStatus('Nessun dato sul server per questa chiave.');if(!silent)alert('Nessun dato sul server per questa chiave.');return}if(!res.ok)throw new Error('HTTP '+res.status);const data=await res.json();syncing=true;applyBackup(data);syncing=false;localStorage.setItem(SAVEDAT_KEY,res.headers.get('X-Updated-At')||new Date().toISOString());setSyncStatus('Caricato dal server · '+new Date().toLocaleTimeString('it-IT'));if(!silent)alert('Dati caricati dal server.')}catch(e){setSyncStatus('Errore caricamento: '+e.message,true);if(!silent)alert('Errore sync: '+e.message)}}
+async function autoSync(){const c=syncCfg();if(!c.auto||!syncBase())return;try{const res=await fetch(syncEndpoint(),{headers:syncHeaders()});if(res.status===404){await serverPush(true);return}if(!res.ok)throw new Error('HTTP '+res.status);const serverTs=res.headers.get('X-Updated-At')||'',localTs=localStorage.getItem(SAVEDAT_KEY)||'';if(serverTs&&(!localTs||serverTs>localTs)){const data=await res.json();syncing=true;applyBackup(data);syncing=false;localStorage.setItem(SAVEDAT_KEY,serverTs);setSyncStatus('Allineato dal server · '+new Date().toLocaleTimeString('it-IT'))}else{await serverPush(true)}}catch(e){setSyncStatus('Auto-sync non riuscito: '+e.message,true)}}
+(function initSync(){const c=syncCfg();$('syncUrl').value=c.url||'';$('syncKey').value=c.key||'default';$('syncAuto').checked=!!c.auto;const persist=()=>{save(SYNC_KEY,{url:$('syncUrl').value.trim(),key:$('syncKey').value.trim()||'default',auto:$('syncAuto').checked});setSyncStatus('Configurazione salvata.')};$('syncUrl').onchange=persist;$('syncKey').onchange=persist;$('syncAuto').onchange=persist;$('syncPush').onclick=()=>serverPush(false);$('syncPull').onclick=()=>serverPull(false)})();
+
 /* ---------- Eventi cibi ---------- */
 $('csvFile').onchange=e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const list=parseFoodsCSV(String(reader.result));if(!list.length){alert('Nessun alimento trovato nel CSV.');return}const r=mergeFoods(list);renderFoods();renderDiary();alert(`Importati ${list.length} alimenti (${r.added} nuovi, ${r.updated} aggiornati).`)}catch(err){alert('Errore import CSV: '+err.message)}};reader.readAsText(file,'utf-8');e.target.value=''};
 $('loadDefault').onclick=()=>{const r=mergeFoods(DEFAULT_FOODS.map(f=>({...f,id:uid()})));renderFoods();renderDiary();alert(`Alimenti di esempio caricati (${r.added} nuovi, ${r.updated} aggiornati).`)};
@@ -182,6 +198,6 @@ function render(){
  if(currentTab==='dashboard')drawChart(sorted);
 }
 window.addEventListener('resize',()=>{if(currentTab==='dashboard')drawChart([...entries].sort((a,b)=>a.date.localeCompare(b.date)))});
-renderFoods();renderDiary();render();showTab(currentTab);
+renderFoods();renderDiary();render();showTab(currentTab);autoSync();
 </script>
 </body></html>
