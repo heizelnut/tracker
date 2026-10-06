@@ -46,7 +46,7 @@ Poi visita <http://localhost:8000>.
 L'interfaccia è divisa in **tab**:
 
 - **Dashboard** — peso attuale, medie 7 giorni (peso, kcal, P/G/C), nuova registrazione, grafico del peso.
-- **Diario** — alimenti consumati per data, con grammi e totali kcal/macro vs target.
+- **Diario** — alimenti consumati per data, con grammi e totali kcal/macro vs target. Le voci si possono **riordinare** (trascina l'handle `⠿` oppure usa `▲`/`▼`).
 - **Allenamenti** — programma diviso per sessioni, aggiungi/modifica manualmente o importa da CSV.
 - **Cibi** — database alimenti: aggiungi/modifica manualmente, import/export CSV, ricerca e filtro per categoria.
 - **Storico** — tutte le registrazioni con peso, kcal, macro e tipo giornata.
@@ -65,6 +65,7 @@ In dettaglio:
 - 🥩 **Database cibi** importabile da CSV (vedi sotto)
 - ➕ **Aggiunta/modifica manuale degli alimenti** dall'interfaccia
 - 📓 **Diario alimentare**: aggiungi gli alimenti con i grammi e l'app calcola kcal + macro vs target
+- ↕️ **Riordino voci del diario**: trascina l'handle `⠿` (desktop) o usa i pulsanti `▲`/`▼` (anche su mobile) per cambiare l'ordine dei pasti nella giornata
 - 🤖 **Suggerimento greedy**: cosa mangiare nel resto della giornata per completare kcal e macro
 
 > I dati restano **sul dispositivo/browser** e non vengono inviati a nessun server.
