@@ -84,7 +84,7 @@ function load(k,def){try{const v=JSON.parse(localStorage.getItem(k));return v==n
 function save(k,v){localStorage.setItem(k,JSON.stringify(v));if(k===KEY||k===FOODS_KEY||k===DIARY_KEY){if(!syncing)localStorage.setItem(SAVEDAT_KEY,new Date().toISOString());scheduleSync()}}
 function isoToday(){return new Date().toISOString().slice(0,10)}
 function toNum(v){if(v==null)return NaN;let s=String(v).trim().replace(/[^\d.,\-]/g,'');if(s==='')return NaN;if(s.includes(',')&&s.includes('.')){s=s.lastIndexOf(',')>s.lastIndexOf('.')?s.replace(/\./g,'').replace(',','.'):s.replace(/,/g,'')}else if(s.includes(',')){s=s.replace(',','.')}return parseFloat(s)}
-function fmt1(n){return (Math.round((Number(n)||0)*10)/10).toFixed(1).replace('.',',')}
+function fmt1(n){return (Math.round((Number(n)||0)*10)/10).toFixed(1)}
 function fmtInt(n){return String(Math.round(Number(n)||0))}
 function fmtDate(d){return new Intl.DateTimeFormat('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(d+'T12:00:00'))}
 
