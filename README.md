@@ -61,6 +61,7 @@ In dettaglio:
 - 🥩 **Database cibi** importabile da CSV (vedi sotto)
 - ➕ **Aggiunta/modifica manuale degli alimenti** dall'interfaccia
 - 📓 **Diario alimentare**: aggiungi gli alimenti con i grammi e l'app calcola kcal + macro vs target
+- 🤖 **Suggerimento greedy**: cosa mangiare nel resto della giornata per completare kcal e macro
 
 > I dati restano **sul dispositivo/browser** e non vengono inviati a nessun server.
 
@@ -101,6 +102,22 @@ Petto di pollo;22,5;2,6;0;120;120;280;proteina;
 Il pulsante **“Carica alimenti di esempio”** inserisce i 32 alimenti di
 [`data/cibi.csv`](./data/cibi.csv) senza bisogno di importare nulla.
 Puoi anche **esportare** il database corrente o **scaricare un modello** CSV vuoto.
+
+## 🤖 Algoritmo greedy (resto della giornata)
+
+Nel tab **Diario**, sotto i totali, l'app suggerisce **cosa mangiare per completare
+la giornata**. È un algoritmo greedy:
+
+1. Calcola il residuo `target − consumato` per kcal, proteine, grassi e carboidrati.
+2. Ad ogni passo valuta ogni alimento del database con una porzione che copre il
+   residuo calorico (limitata a `Min`/`Max`), e sceglie quello che **riduce di più
+   l'errore** verso i target.
+3. L'errore pesa di più le proteine (×3) e penalizza il superamento delle calorie;
+   ogni alimento si usa una volta sola e al massimo 2 per categoria.
+4. Si ferma quando restano < 40 kcal o quando nessun alimento migliora la situazione.
+
+Per ogni suggerimento vedi alimento, porzione, macro e un pulsante **Aggiungi** per
+inserirlo direttamente nel diario.
 
 ## Prossimi passi possibili
 
