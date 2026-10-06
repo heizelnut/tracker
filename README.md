@@ -14,6 +14,7 @@ riducendo gradualmente il grasso, con un deficit calorico moderato.
 | [`cmd/server`](./cmd/server) | Backend minimale (Go, stdlib) che serve l'app e sincronizza un blob opaco per chiave. |
 | [`Dockerfile`](./Dockerfile) · [`docker-compose.yml`](./docker-compose.yml) | Self-hosting in un container. |
 | [`data/cibi.csv`](./data/cibi.csv) | Database alimenti d'esempio, esportato dal foglio **“Cibo”** di `~/Documents/dieta/macros.xlsx`. |
+| [`data/allenamenti.csv`](./data/allenamenti.csv) | Scheda allenamento 3 giorni d'esempio (dalla conversazione originale). |
 | [`docs/scheda-allenamento.md`](./docs/scheda-allenamento.md) | Scheda palestra 3 giorni (2× upper / 2× lower). |
 | [`docs/piano-nutrizionale.md`](./docs/piano-nutrizionale.md) | Target calorici e macro (giorni allenamento vs riposo). |
 
@@ -46,6 +47,7 @@ L'interfaccia è divisa in **tab**:
 
 - **Dashboard** — peso attuale, medie 7 giorni (peso, kcal, P/G/C), nuova registrazione, grafico del peso.
 - **Diario** — alimenti consumati per data, con grammi e totali kcal/macro vs target.
+- **Allenamenti** — programma diviso per sessioni, aggiungi/modifica manualmente o importa da CSV.
 - **Cibi** — database alimenti: aggiungi/modifica manualmente, import/export CSV, ricerca e filtro per categoria.
 - **Storico** — tutte le registrazioni con peso, kcal, macro e tipo giornata.
 
@@ -104,6 +106,27 @@ Petto di pollo;22,5;2,6;0;120;120;280;proteina;
 Il pulsante **“Carica alimenti di esempio”** inserisce i 32 alimenti di
 [`data/cibi.csv`](./data/cibi.csv) senza bisogno di importare nulla.
 Puoi anche **esportare** il database corrente o **scaricare un modello** CSV vuoto.
+
+## 🏋️ Allenamenti (CSV)
+
+Il tab **Allenamenti** gestisce la scheda divisa per **sessioni** (giorni). Ogni
+esercizio ha: Sessione, Esercizio, Serie, Ripetizioni, Recupero, Note — tutti
+testi liberi, così funzionano sia `3 × 6-10` sia `3 × 30-60"`.
+
+- **Carica programma di esempio** inserisce la scheda 3 giorni della conversazione
+  originale (22 esercizi, `data/allenamenti.csv`).
+- **Importa CSV** con questa struttura:
+
+```csv
+Sessione;Esercizio;Serie;Ripetizioni;Recupero;Note
+Giorno 1 — Upper A;Spinta manubri — panca piana;3;6-10;2-3';
+Giorno 1 — Upper A;Alzate laterali;3;12-15;60-90";
+```
+
+- Delimitatore `,` o `;` auto-rilevato; intestazione riconosciuta automaticamente.
+- Colonne `Sessione` e `Note` opzionali.
+- L'import **unisce**: stessa sessione + esercizio = aggiorna, altrimenti aggiunge.
+- Puoi anche **esportare** il programma o scaricare un **modello** CSV.
 
 ## 🤖 Algoritmo greedy (score per macro)
 
@@ -177,7 +200,7 @@ Lo stack per l'homelab è in `~/code/nix` → [`hosts/lab/docker/tracker/`](../n
 
 Se non vuoi self-hostare, in fondo all'app ci sono **Esporta backup (.json)** e
 **Importa backup**: sposti il file con iCloud Drive / Google Drive / AirDrop /
-WhatsApp. Contiene peso/calorie, diario e database cibi.
+WhatsApp. Contiene peso/calorie, diario, database cibi e programma allenamenti.
 
 ## Prossimi passi possibili
 
