@@ -1,0 +1,33 @@
+Food (100gr);Proteine;Grasso;Carboidrati;kcal;Min (g);Max (g);Categoria;Pezzo (g)
+Grana Padano;33;29;0;398;10;30;extra,secco;
+Tonno in scatola sott'olio;29;8;0;198;60;150;proteina;
+Arachidi (non salate);25.8;49.2;16.1;567;10;40;grassi,secco;
+Tonno in scatola al naturale;25.5;0.8;0;116;60;200;proteina;
+Burro di arachidi (100% arachidi);25;50;20;588;10;35;grassi;
+Sardine in scatola sott'olio;24.6;11.5;0;208;60;150;proteina;
+Semi di girasole (sgusciati);20.8;51.5;20;584;10;30;grassi,extra,secco;
+Mozzarella;18;19;1;250;60;150;proteina;
+Fiocchi di latte (magri);12;1;2.7;72;100;250;proteina,latticino,spuntino;
+Yogurt greco 0% grassi;10.2;0.4;3.6;59;125;350;latticino,spuntino;
+Pane (bianco di frumento);9;3.2;49;265;30;120;carboidrato,cereale;
+Ceci in scatola;7;2.8;22;139;100;250;carboidrato;
+Fagioli bianchi in scatola (cannellini);7;0.5;20;115;100;250;carboidrato;
+Latte parzialmente scremato;3.4;1.6;4.8;46;150;300;latticino,spuntino;
+Banane;1.1;0.3;22.8;89;80;150;frutta,spuntino;
+Burro;0.9;81;0.1;717;5;15;;
+Olio extravergine d'oliva;0;100;0;884;5;25;condimento;
+Fiocchi d'avena;13.2;6.5;68;379;30;90;cereale;
+Couscous (secco);12.8;0.6;77;376;50;100;carboidrato;
+Misto di verdure surgelate;3;0.4;12;60;150;350;verdura;
+Fettine/scaloppine di petto di tacchino;23.7;1.5;0;114;100;250;proteina;
+Uova (intere);12.6;9.5;0.7;143;55;220;proteina,latticino;55
+Polenta istantanea / farina di mais (secca);8.1;3.6;77;362;50;100;carboidrato;
+Macinato di manzo (~10% grassi);20;10;0;176;100;200;proteina;
+Tofu compatto;17.3;8.7;2.8;144;100;250;proteina;
+Pasta (secca);13;1.5;75;371;60;110;carboidrato;
+Petto di pollo;22.5;2.6;0;120;120;280;proteina;
+Pesce bianco surgelato (nasello/merluzzo);17.8;0.7;0;82;150;300;proteina;
+Riso bianco (secco);7.1;0.7;80;365;60;110;carboidrato;
+Lenticchie rosse/verdi (secche);24.6;1.1;63;352;40;90;carboidrato;
+Patate;2;0.1;17;77;150;400;carboidrato;
+Cosce di pollo (senza pelle);19.7;4.1;0;121;120;250;proteina;
