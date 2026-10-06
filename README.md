@@ -40,6 +40,15 @@ Poi visita <http://localhost:8000>.
 
 ### Funzionalità
 
+L'interfaccia è divisa in **tab**:
+
+- **Dashboard** — peso attuale, medie 7 giorni (peso, kcal, P/G/C), nuova registrazione, grafico del peso.
+- **Diario** — alimenti consumati per data, con grammi e totali kcal/macro vs target.
+- **Cibi** — database alimenti: aggiungi/modifica manualmente, import/export CSV, ricerca e filtro per categoria.
+- **Storico** — tutte le registrazioni con peso, kcal, macro e tipo giornata.
+
+In dettaglio:
+
 - 📊 Andamento del peso con grafico
 - ⚖️ Peso giornaliero
 - 🔥 Calorie introdotte
@@ -50,9 +59,25 @@ Poi visita <http://localhost:8000>.
 - 🗑️ Eliminazione singola registrazione o di tutto lo storico
 - 📱 Interfaccia responsive per Android
 - 🥩 **Database cibi** importabile da CSV (vedi sotto)
+- ➕ **Aggiunta/modifica manuale degli alimenti** dall'interfaccia
 - 📓 **Diario alimentare**: aggiungi gli alimenti con i grammi e l'app calcola kcal + macro vs target
 
 > I dati restano **sul dispositivo/browser** e non vengono inviati a nessun server.
+
+## ➕ Aggiungere un alimento a mano
+
+Nel tab **Cibi**, il form in alto permette di creare un alimento con:
+
+| Campo | Note |
+|---|---|
+| Nome | obbligatorio |
+| Proteine / Grassi / Carboidrati | g per 100 g |
+| kcal | se lasciato vuoto viene calcolata da `P×4 + C×4 + G×9` |
+| Min / Max | porzione consigliata in grammi (opzionale) |
+| Categoria | tag separati da virgola, es. `proteina,latticino` |
+| Pezzo | grammi per pezzo (opzionale) |
+
+Ogni riga della tabella ha i pulsanti **Aggiungi** (al diario), **Modifica** e **×** (elimina).
 
 ## 🥩 Importare un CSV di cibi
 
