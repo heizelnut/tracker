@@ -5,11 +5,17 @@
 // knowledge of what the app stores — just "give me the bytes for this key"
 // and "save these bytes under this key". The browser decides what to sync.
 //
+// Blobs may be gzip-compressed in transit and at rest. That is still not
+// schema knowledge: the server only sniffs the gzip magic number to decide
+// whether a response needs Content-Encoding, and never parses the payload.
+//
 // Security is the network boundary: it is meant to run on a LAN / Tailscale,
 // not exposed to the internet.
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"io"
 	"log"
@@ -17,10 +23,21 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 )
 
 const maxBlobBytes = 8 << 20 // 8 MiB per blob — years of entries.
+
+// gzipMagic identifies a stored blob as gzip-compressed. Blobs are
+// self-describing: the server still knows nothing about the JSON inside, it just
+// sniffs these two bytes to decide whether a response needs Content-Encoding.
+var gzipMagic = []byte{0x1f, 0x8b}
+
+// minGzipBytes skips compression for small bodies (404 pages, empty blobs),
+// where gzip adds framing overhead for no gain.
+const minGzipBytes = 860
 
 // Keys map 1:1 to filenames, so keep them boring (no path traversal).
 var keyRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
@@ -83,7 +100,50 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Updated-At", info.ModTime().UTC().Format(time.RFC3339Nano))
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_, _ = w.Write(data)
+	w.Header().Set("Vary", "Accept-Encoding")
+
+	// The diary blob is ~320 KiB of highly repetitive JSON that gzips ~23x.
+	wantGzip := acceptsGzip(r)
+	storedGzip := isGzip(data)
+
+	switch {
+	case storedGzip && wantGzip:
+		// Compressed at rest and the client can decode it: pass through
+		// untouched, no CPU spent.
+		serveBody(w, r, data, "gzip")
+	case storedGzip:
+		// Client cannot decode gzip (curl, old client): decompress on the way
+		// out so the bytes are always plain JSON for whoever asks.
+		plain, err := gunzipLimit(data, maxBlobBytes)
+		if err != nil {
+			http.Error(w, "corrupt blob", http.StatusInternalServerError)
+			return
+		}
+		serveBody(w, r, plain, "")
+	case wantGzip && len(data) >= minGzipBytes:
+		// Stored plain (written by an older client): compress now.
+		gz, err := gzipBytes(data)
+		if err != nil {
+			serveBody(w, r, data, "")
+			return
+		}
+		serveBody(w, r, gz, "gzip")
+	default:
+		serveBody(w, r, data, "")
+	}
+}
+
+// serveBody writes body with an explicit Content-Length. The encoding is passed
+// in by the caller because it is decided from the stored bytes, not the body.
+func serveBody(w http.ResponseWriter, r *http.Request, body []byte, encoding string) {
+	if encoding != "" {
+		w.Header().Set("Content-Encoding", encoding)
+	}
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = w.Write(body)
 }
 
 func (s *server) put(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +160,17 @@ func (s *server) put(w http.ResponseWriter, r *http.Request) {
 	if len(body) > maxBlobBytes {
 		http.Error(w, "blob too large", http.StatusRequestEntityTooLarge)
 		return
+	}
+	// A gzipped upload is stored as-is: the bytes stay opaque, and get() sniffs
+	// the magic number to decide how to serve them. We only insist that it is
+	// real gzip and that it cannot inflate past the blob limit. Content-Encoding
+	// is deliberately ignored — the bytes themselves are the source of truth, so
+	// a proxy that transparently decompressed the request cannot corrupt us.
+	if isGzip(body) {
+		if _, err := gunzipLimit(body, maxBlobBytes); err != nil {
+			http.Error(w, "bad gzip body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 	if err := s.write(key, body); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -141,12 +212,76 @@ func (s *server) write(key string, body []byte) error {
 	return os.Rename(tmp, s.path(key))
 }
 
+// isGzip reports whether b starts with the gzip magic number.
+func isGzip(b []byte) bool {
+	return len(b) >= 2 && b[0] == gzipMagic[0] && b[1] == gzipMagic[1]
+}
+
+// gunzipLimit decompresses b, refusing to produce more than max bytes so a
+// small upload cannot expand into an unbounded response.
+func gunzipLimit(b []byte, max int) ([]byte, error) {
+	zr, err := gzip.NewReader(bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	defer zr.Close()
+	out, err := io.ReadAll(io.LimitReader(zr, int64(max)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(out) > max {
+		return nil, errors.New("decompressed blob too large")
+	}
+	return out, nil
+}
+
+// gzipBytes compresses b at BestSpeed: this data is JSON with long runs of
+// repeated keys, so the cheap setting already gets ~23x.
+func gzipBytes(b []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := zw.Write(b); err != nil {
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// acceptsGzip reports whether the client asked for gzip, honouring q=0.
+func acceptsGzip(r *http.Request) bool {
+	for _, part := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
+		fields := strings.Split(part, ";")
+		name := strings.ToLower(strings.TrimSpace(fields[0]))
+		if name != "gzip" && name != "*" {
+			continue
+		}
+		q := 1.0
+		for _, p := range fields[1:] {
+			if v, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(p)), "q="); ok {
+				if f, err := strconv.ParseFloat(v, 64); err == nil {
+					q = f
+				}
+			}
+		}
+		return q > 0
+	}
+	return false
+}
+
 // withCORS lets the standalone (file://) copy of the app talk to the server.
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Encoding")
+		// autoSync reads X-Updated-At to pick last-write-wins; without this the
+		// file:// copy cannot see the header and would push every time.
+		w.Header().Set("Access-Control-Expose-Headers", "X-Updated-At")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

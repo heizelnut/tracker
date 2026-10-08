@@ -170,13 +170,29 @@ docker compose up --build
 | Metodo | Path | Descrizione |
 |---|---|---|
 | `GET` | `/api/kv/{key}` | Legge il blob (header `X-Updated-At` col timestamp) |
-| `PUT` | `/api/kv/{key}` | Scrive il blob (max 8 MiB) |
+| `PUT` | `/api/kv/{key}` | Scrive il blob (max 8 MiB, anche gzip) |
 | `DELETE` | `/api/kv/{key}` | Elimina il blob |
 | `GET` | `/healthz` | Healthcheck |
 | `*` | `/` | Serve l'app statica (`index.html`) |
 
 I blob finiscono in `DATA_DIR` (un file per chiave, scrittura atomica
 temp+rename). Le chiavi sono `[A-Za-z0-9_-]{1,64}`.
+
+#### Compressione gzip
+
+Il diario è JSON molto ripetitivo: un backup reale (~320 KiB) si comprime
+~20-25x, quindi la compressione è quella che rende la sync veloce.
+
+- **Upload**: l'app comprime il body con `CompressionStream` e manda
+  `Content-Encoding: gzip`; se il browser non lo supporta, manda JSON normale.
+- **Download**: se il client manda `Accept-Encoding: gzip` la risposta è
+  compressa (`Vary: Accept-Encoding`).
+- **Il server resta stupido**: non sa cosa c'è dentro il blob, controlla solo i
+  magic bytes `1f 8b` per capire se i byte su disco sono già gzip. Un blob
+  salvato compresso viene servito così com'è a chi accetta gzip (zero CPU) e
+  decompresso al volo per chi non lo accetta (`curl`, client vecchi).
+- Il limite di 8 MiB vale sia sul body ricevuto sia sui byte decompressi, così
+  un blob piccolo non può espandersi in una risposta enorme.
 
 ### Sync nell'app
 
