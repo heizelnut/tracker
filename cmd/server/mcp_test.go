@@ -241,19 +241,25 @@ func TestMCPListFoodsFilterAndPage(t *testing.T) {
 func TestMCPAddWorkoutAndSessions(t *testing.T) {
 	srv := newTestServer(t)
 	first := mcpCall(t, srv, "add_workout", map[string]any{
-		"session": "Giorno 1 — Upper A", "name": "Panca piana", "sets": "3", "reps": "6-10", "rest": "2-3'",
+		"session": "Giorno 1 — Upper A", "name": "Panca piana", "sets": "3", "type": "compound", "rest": "2-3'",
 	})
 	if first["created"] != true {
 		t.Fatalf("created = %v", first["created"])
 	}
-	mcpCall(t, srv, "add_workout", map[string]any{"session": "Giorno 1 — Upper A", "name": "Lat machine", "sets": "3", "reps": "8-12"})
-	mcpCall(t, srv, "add_workout", map[string]any{"session": "Giorno 2", "name": "Leg press", "sets": "3", "reps": "8-12"})
+	if got := first["workout"].(map[string]any)["type"]; got != "compound" {
+		t.Fatalf("type = %v, want compound", got)
+	}
+	mcpCall(t, srv, "add_workout", map[string]any{"session": "Giorno 1 — Upper A", "name": "Lat machine", "sets": "3", "type": "Compound"})
+	mcpCall(t, srv, "add_workout", map[string]any{"session": "Giorno 2", "name": "Leg press", "sets": "3", "type": "isolation"})
 
 	updated := mcpCall(t, srv, "add_workout", map[string]any{
-		"session": "Giorno 1 — Upper A", "name": "panca piana", "sets": "4", "reps": "5",
+		"session": "Giorno 1 — Upper A", "name": "panca piana", "sets": "4", "type": "multi-joint",
 	})
 	if updated["created"] != false {
 		t.Fatalf("same session+name should update, got created=%v", updated["created"])
+	}
+	if got := updated["workout"].(map[string]any)["type"]; got != "compound" {
+		t.Fatalf("type = %v, want compound (normalised from multi-joint)", got)
 	}
 
 	list := mcpCall(t, srv, "list_workouts", map[string]any{})

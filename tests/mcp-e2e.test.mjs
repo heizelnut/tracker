@@ -123,9 +123,10 @@ test('un alimento e un esercizio aggiunti via MCP arrivano al dispositivo', asyn
   });
   assert.equal(food.created, true);
   const workout = await mcpCall(base, 'add_workout', {
-    session: 'Giorno 1 — Upper A', name: 'Panca MCP', sets: '3', reps: '6-10', rest: "2-3'",
+    session: 'Giorno 1 — Upper A', name: 'Panca MCP', sets: '3', type: 'compound', rest: "2-3'",
   });
   assert.equal(workout.created, true);
+  assert.equal(workout.workout.type, 'compound');
 
   // Il dispositivo risincronizza: deve assorbire entrambi, non riscriverli.
   const synced = await syncDevice(base, 'default', phone);

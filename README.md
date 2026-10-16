@@ -114,21 +114,23 @@ Puoi anche **esportare** il database corrente o **scaricare un modello** CSV vuo
 ## 🏋️ Allenamenti (CSV)
 
 Il tab **Allenamenti** gestisce la scheda divisa per **sessioni** (giorni). Ogni
-esercizio ha: Sessione, Esercizio, Serie, Ripetizioni, Recupero, Note — tutti
-testi liberi, così funzionano sia `3 × 6-10` sia `3 × 30-60"`.
+esercizio ha: Sessione, Esercizio, Serie, Tipo, Recupero, Note. Il **Tipo**
+distingue gli esercizi **compound** (multi-articolari) da quelli di **isolation**;
+Serie e Recupero sono testo libero, così funzionano sia `3` sia `2-3'`.
 
 - **Carica programma di esempio** inserisce la scheda 3 giorni della conversazione
   originale (22 esercizi, `data/allenamenti.csv`).
 - **Importa CSV** con questa struttura:
 
 ```csv
-Sessione;Esercizio;Serie;Ripetizioni;Recupero;Note
-Giorno 1 — Upper A;Spinta manubri — panca piana;3;6-10;2-3';
-Giorno 1 — Upper A;Alzate laterali;3;12-15;60-90";
+Sessione;Esercizio;Serie;Tipo;Recupero;Note
+Giorno 1 — Upper A;Spinta manubri — panca piana;3;compound;2-3';
+Giorno 1 — Upper A;Alzate laterali;3;isolation;60-90";
 ```
 
 - Delimitatore `,` o `;` auto-rilevato; intestazione riconosciuta automaticamente.
-- Colonne `Sessione` e `Note` opzionali.
+- `Tipo` accetta `compound`/`isolation` (anche `multi`/`iso`).
+- Colonne `Sessione`, `Tipo` e `Note` opzionali.
 - L'import **unisce**: stessa sessione + esercizio = aggiorna, altrimenti aggiunge.
 - Puoi anche **esportare** il programma o scaricare un **modello** CSV.
 - **⏱ Timer recupero fullscreen**: ogni esercizio ha un pulsante che avvia un countdown

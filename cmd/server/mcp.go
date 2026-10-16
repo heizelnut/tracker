@@ -271,7 +271,7 @@ func mcpTools() []map[string]any {
 		{
 			"name":        "list_workouts",
 			"title":       "List workouts",
-			"description": "List the training program. Every exercise has a session (training day), name, sets, reps, rest and free-text notes. Supports a session filter and a name substring. The response also lists the available sessions.",
+			"description": "List the training program. Every exercise has a session (training day), name, sets, type (compound/isolation), rest and free-text notes. Supports a session filter and a name substring. The response also lists the available sessions.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -285,14 +285,14 @@ func mcpTools() []map[string]any {
 		{
 			"name":        "add_workout",
 			"title":       "Add or update a workout exercise",
-			"description": "Add an exercise to the training program, or update it when the same (session, exercise name) already exists. Sets, reps and rest are free text so both \"3 x 6-10\" and \"2-3'\" work. Returns the stored record and whether it was created or updated.",
+			"description": "Add an exercise to the training program, or update it when the same (session, exercise name) already exists. Sets and rest are free text (e.g. \"3\", \"2-3'\"); `type` classifies the exercise as compound or isolation. Returns the stored record and whether it was created or updated.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"name":    str("Exercise name. Required; upserted together with session."),
 					"session": str(`Training day, e.g. "Giorno 1 — Upper A".`),
 					"sets":    str("Number of sets, e.g. \"3\"."),
-					"reps":    str(`Repetitions, e.g. "6-10".`),
+					"type":    map[string]any{"type": "string", "enum": []string{"compound", "isolation"}, "description": "compound = multi-joint, isolation = single-joint."},
 					"rest":    str(`Rest between sets, e.g. "2-3'" or "60-90\"".`),
 					"notes":   str("Free-text note."),
 					"key":     keyProp,
@@ -670,7 +670,7 @@ func (s *server) toolAddWorkout(args map[string]any) (any, error) {
 			"session": session,
 			"name":    name,
 			"sets":    argString(args, "sets"),
-			"reps":    argString(args, "reps"),
+			"type":    normalizeWorkoutType(argString(args, "type")),
 			"rest":    argString(args, "rest"),
 			"notes":   argString(args, "notes"),
 		}
@@ -1315,6 +1315,18 @@ func diaryTotals(items []map[string]any) map[string]any {
 }
 
 func round1(v float64) float64 { return math.Round(v*10) / 10 }
+
+// normalizeWorkoutType maps a free-text exercise type to compound/isolation.
+func normalizeWorkoutType(v string) string {
+	s := strings.ToLower(strings.TrimSpace(v))
+	switch {
+	case strings.Contains(s, "iso"):
+		return "isolation"
+	case strings.Contains(s, "comp"), strings.Contains(s, "multi"):
+		return "compound"
+	}
+	return ""
+}
 
 func getFloat(m map[string]any, key string) float64 {
 	v, ok := m[key]
