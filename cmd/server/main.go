@@ -10,7 +10,7 @@
 // That is the migration path — no client change is needed to move the data
 // into SQLite. An MCP server at /mcp exposes the same records to agents.
 //
-// Security is the network boundary: it is meant to run on a LAN / Tailscale,
+// Security is the network boundary: it is meant to run on a private network / LAN,
 // not exposed to the internet.
 package main
 

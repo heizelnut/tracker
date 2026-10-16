@@ -140,7 +140,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no") // no proxy buffering (Traefik/nginx)
+	w.Header().Set("X-Accel-Buffering", "no") // no proxy buffering (reverse proxy)
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, ": connected\n\n")
 	flusher.Flush()

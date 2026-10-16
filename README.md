@@ -1,326 +1,306 @@
-# Ricomposizione — Progress Tracker
+# Progress Tracker
 
-Progetto inizializzato a partire dalla conversazione ChatGPT
-[_"Programma palestra 3 giorni"_](https://chatgpt.com/share/6ac499e1-17a8-83eb-89f8-8048abe883e5).
+A self-contained web app for tracking body recomposition: weight, calories and
+macros, with a workout program and a food database. It works offline as a PWA
+and can optionally sync across devices through a small Go + SQLite backend that
+also exposes an MCP server for AI agents.
 
-L'obiettivo è la **ricomposizione corporea**: costruire/recuperare massa muscolare
-riducendo gradualmente il grasso, con un deficit calorico moderato.
+## What's in here
 
-## Cosa contiene
-
-| File | Descrizione |
+| File | Description |
 |---|---|
-| [`index.html`](./index.html) | App web (single file) per tracciare peso, calorie e macro. Salva tutto in **LocalStorage**. |
-| [`cmd/server`](./cmd/server) | Backend (Go + SQLite) che serve l'app, sincronizza i record in modo incrementale, espone un server **MCP** per gli agenti e mantiene la vecchia API a blob per la migrazione. |
-| [`Dockerfile`](./Dockerfile) · [`docker-compose.yml`](./docker-compose.yml) | Self-hosting in un container. |
-| [`manifest.json`](./manifest.json) · [`sw.js`](./sw.js) · [`favicon.svg`](./favicon.svg) · [`icons/`](./icons) | PWA: icona, installabile sulla home screen, funziona offline. |
-| [`data/cibi.csv`](./data/cibi.csv) | Database alimenti d'esempio, esportato dal foglio **“Cibo”** di `~/Documents/dieta/macros.xlsx`. |
-| [`data/allenamenti.csv`](./data/allenamenti.csv) | Scheda allenamento 3 giorni d'esempio (dalla conversazione originale). |
-| [`docs/scheda-allenamento.md`](./docs/scheda-allenamento.md) | Scheda palestra 3 giorni (2× upper / 2× lower). |
-| [`docs/piano-nutrizionale.md`](./docs/piano-nutrizionale.md) | Target calorici e macro (giorni allenamento vs riposo). |
+| [`index.html`](./index.html) | The web app (single file). Stores everything in **LocalStorage**. |
+| [`cmd/server`](./cmd/server) | Backend (Go + SQLite): serves the app, syncs records incrementally, exposes an **MCP** server, and keeps the legacy blob API for migration. |
+| [`Dockerfile`](./Dockerfile) · [`docker-compose.yml`](./docker-compose.yml) | Self-hosting in one container. |
+| [`manifest.json`](./manifest.json) · [`sw.js`](./sw.js) · [`favicon.svg`](./favicon.svg) · [`icons/`](./icons) | PWA: installable on the home screen, works offline. |
+| [`data/cibi.csv`](./data/cibi.csv) | Example food database. |
+| [`data/allenamenti.csv`](./data/allenamenti.csv) | Example 3-day workout program. |
+| [`docs/scheda-allenamento.md`](./docs/scheda-allenamento.md) | Example workout plan (2x upper / 2x lower). |
+| [`docs/piano-nutrizionale.md`](./docs/piano-nutrizionale.md) | Example calorie and macro targets. |
 
-## Profilo di riferimento
+## Using the tracker
 
-- 22 anni, maschio
-- 172 cm, 72,7 kg
-- Vita sedentaria + 3 allenamenti/settimana
-- ~25 min di cardio per sessione (15' prima + 10' dopo)
-- Obiettivo: ricomposizione **abbastanza aggressiva**
-
-## Come usare il tracker
-
-Apri `index.html` nel browser (anche da smartphone Android). Puoi servirlo
-localmente con:
+Open `index.html` in a browser (it works on Android phones too). Serve it
+locally with:
 
 ```bash
 # Python
 python3 -m http.server 8000
 
-# oppure Node
+# or Node
 npx serve .
 ```
 
-Poi visita <http://localhost:8000>.
+Then visit <http://localhost:8000>.
 
-### Funzionalità
+### Features
 
-L'interfaccia è divisa in **tab**:
+The UI is split into tabs:
 
-- **Dashboard** — peso attuale, medie 7 giorni (peso, kcal, P/G/C), nuova registrazione, grafico del peso.
-- **Diario** — alimenti consumati per data, con grammi e totali kcal/macro vs target. Le voci si possono **riordinare** (trascina l'handle `⠿` oppure usa `▲`/`▼`).
-- **Allenamenti** — programma diviso per sessioni, aggiungi/modifica manualmente o importa da CSV.
-- **Cibi** — database alimenti: aggiungi/modifica manualmente, import/export CSV, ricerca e filtro per categoria.
-- **Storico** — tutte le registrazioni con peso, kcal, macro e tipo giornata.
-- **Impostazioni** — backup (esporta/importa/cancella) e sincronizzazione.
+- **Dashboard** — current weight, 7-day averages (weight, kcal, P/F/C), a new entry form, and a weight chart.
+- **Diary** — foods eaten per day, with grams and kcal/macro totals vs target. Entries can be **reordered** (drag the `⠿` handle or use `▲`/`▼`).
+- **Workouts** — the program split by session; add/edit manually or import from CSV.
+- **Foods** — the food database: add/edit manually, CSV import/export, search and filter by category.
+- **History** — every entry with weight, kcal, macros and day type.
+- **Settings** — backup (export/import/clear) and sync.
 
-In dettaglio:
+In detail:
 
-- 📊 Andamento del peso con grafico
-- ⚖️ Peso giornaliero
-- 🔥 Calorie introdotte
-- 🏋️ Distinzione allenamento / riposo
-- 📈 Medie degli ultimi 7 giorni (peso, kcal, proteine, grassi, carboidrati)
-- 🗂️ Storico completo con macro
-- 💾 Salvataggio automatico in LocalStorage
-- 🗑️ Eliminazione singola registrazione o di tutto lo storico
-- 📱 Interfaccia responsive per Android
-- 📲 **PWA**: installabile sulla home screen (standalone, con icona) e utilizzabile offline
-- 🥩 **Database cibi** importabile da CSV (vedi sotto)
-- ➕ **Aggiunta/modifica manuale degli alimenti** dall'interfaccia
-- 📓 **Diario alimentare**: aggiungi gli alimenti con i grammi e l'app calcola kcal + macro vs target
-- ↕️ **Riordino voci del diario**: trascina l'handle `⠿` (desktop) o usa i pulsanti `▲`/`▼` (anche su mobile) per cambiare l'ordine dei pasti nella giornata
-- 🤖 **Suggerimento greedy**: cosa mangiare nel resto della giornata per completare kcal e macro
+- 📊 Weight trend chart
+- ⚖️ Daily weight
+- 🔥 Calories in
+- 🏋️ Training vs rest days
+- 📈 7-day averages (weight, kcal, protein, fat, carbs)
+- 🗂️ Full history with macros
+- 💾 Automatic save to LocalStorage
+- 🗑️ Delete a single entry or the whole history
+- 📱 Responsive UI
+- 📲 **PWA**: installable on the home screen, works offline
+- 🥩 **Food database** importable from CSV
+- ➕ **Manual food add/edit** from the UI
+- 📓 **Food diary**: add foods with grams; the app computes kcal + macros vs target
+- ↕️ **Reorder diary entries**: drag the `⠿` handle (desktop) or use `▲`/`▼` (mobile)
+- 🤖 **Greedy suggestion**: what to eat for the rest of the day to hit kcal and macros
 
-> I dati restano **sul dispositivo/browser** e non vengono inviati a nessun server.
+> Data stays **on the device/browser** and is not sent to any server unless you
+> enable sync.
 
-## ➕ Aggiungere un alimento a mano
+## Adding a food manually
 
-Nel tab **Cibi**, il form in alto permette di creare un alimento con:
+In the **Foods** tab, the top form creates a food with:
 
-| Campo | Note |
+| Field | Notes |
 |---|---|
-| Nome | obbligatorio |
-| Proteine / Grassi / Carboidrati | g per 100 g |
-| kcal | se lasciato vuoto viene calcolata da `P×4 + C×4 + G×9` |
-| Min / Max | porzione consigliata in grammi (opzionale) |
-| Categoria | tag separati da virgola, es. `proteina,latticino` |
-| Pezzo | grammi per pezzo (opzionale) |
+| Name | required |
+| Protein / Fat / Carbs | g per 100 g |
+| kcal | if left blank, computed as `P*4 + C*4 + F*9` |
+| Min / Max | suggested portion in grams (optional) |
+| Category | comma-separated tags, e.g. `protein,dairy` |
+| Piece | grams per piece (optional) |
 
-Ogni riga della tabella ha i pulsanti **Aggiungi** (al diario), **Modifica** e **×** (elimina).
+Each row has **Add** (to the diary), **Edit** and **×** (delete).
 
-## 🥩 Importare un CSV di cibi
+## Importing a food CSV
 
-Nel database cibi puoi **importare un CSV** con la stessa struttura del secondo
-foglio (`Cibo`) di `~/Documents/dieta/macros.xlsx`:
-
-```csv
-Food (100gr);Proteine;Grasso;Carboidrati;kcal;Min (g);Max (g);Categoria;Pezzo (g)
-Grana Padano;33;29;0;398;10;30;extra,secco;
-Petto di pollo;22,5;2,6;0;120;120;280;proteina;
-```
-
-- I valori sono **per 100 g**.
-- Delimitatore `,`, `;` o tab: rilevato automaticamente.
-- Decimali con `.` o `,`.
-- L'intestazione viene riconosciuta anche se il file ha un preambolo (es. `macros.csv`).
-- Se `kcal` manca viene calcolata con `P×4 + C×4 + G×9`.
-- Le colonne `Min`, `Max`, `Categoria` e `Pezzo` sono opzionali.
-- L'import **unisce** i dati: alimenti con lo stesso nome vengono aggiornati, gli altri aggiunti.
-
-Il pulsante **“Carica alimenti di esempio”** inserisce i 32 alimenti di
-[`data/cibi.csv`](./data/cibi.csv) senza bisogno di importare nulla.
-Puoi anche **esportare** il database corrente o **scaricare un modello** CSV vuoto.
-
-## 🏋️ Allenamenti (CSV)
-
-Il tab **Allenamenti** gestisce la scheda divisa per **sessioni** (giorni). Ogni
-esercizio ha: Sessione, Esercizio, Serie, Tipo, Recupero, Note. Il **Tipo**
-distingue gli esercizi **compound** (multi-articolari) da quelli di **isolation**;
-Serie e Recupero sono testo libero, così funzionano sia `3` sia `2-3'`.
-
-- **Carica programma di esempio** inserisce la scheda 3 giorni della conversazione
-  originale (22 esercizi, `data/allenamenti.csv`).
-- **Importa CSV** con questa struttura:
+You can **import a CSV** with the same structure as the food sheet:
 
 ```csv
-Sessione;Esercizio;Serie;Tipo;Recupero;Note
-Giorno 1 — Upper A;Spinta manubri — panca piana;3;compound;2-3';
-Giorno 1 — Upper A;Alzate laterali;3;isolation;60-90";
+Food (100gr);Protein;Fat;Carbs;kcal;Min (g);Max (g);Category;Piece (g)
+Parmesan;33;29;0;398;10;30;extra,dry;
+Chicken breast;22.5;2.6;0;120;120;280;protein;
 ```
 
-- Delimitatore `,` o `;` auto-rilevato; intestazione riconosciuta automaticamente.
-- `Tipo` accetta `compound`/`isolation` (anche `multi`/`iso`).
-- Colonne `Sessione`, `Tipo` e `Note` opzionali.
-- L'import **unisce**: stessa sessione + esercizio = aggiorna, altrimenti aggiunge.
-- Puoi anche **esportare** il programma o scaricare un **modello** CSV.
-- **⏱ Timer recupero fullscreen**: ogni esercizio ha un pulsante che avvia un countdown
-a schermo intero col tempo di recupero ricavato dalla colonna *Recupero*
-(`2-3'` → 180s, `60-90"` → 90s, `1'30"` → 90s). Include pausa, ±15s, anello di
-progresso, beep e vibrazione a fine recupero. Esc/Chiudi per uscire.
+- Values are **per 100 g**.
+- Delimiter `,`, `;` or tab: auto-detected.
+- Decimals with `.` or `,`.
+- The header is recognised even with a preamble.
+- If `kcal` is missing it is computed as `P*4 + C*4 + F*9`.
+- `Min`, `Max`, `Category` and `Piece` are optional.
+- The import **merges**: foods with the same name are updated, others added.
 
-## 🤖 Algoritmo greedy (score per macro)
+The **Load sample foods** button inserts the 32 foods from
+[`data/cibi.csv`](./data/cibi.csv) without importing anything. You can also
+**export** the current database or **download an empty CSV template**.
 
-Nel tab **Diario**, sotto i totali, l'app suggerisce **cosa mangiare per completare
-la giornata** valutando **tutta la tabella dei cibi**:
+## Workouts (CSV)
 
-1. Calcola il fabbisogno residuo `target − consumato` per kcal, proteine, grassi e carboidrati.
-2. Per ogni alimento, con la sua porzione consigliata (`Max`, altrimenti `Min`, altrimenti 100 g),
-   calcola uno **score per macro**: quanto la porzione copre il residuo di quel macro
-   (100% = lo copre esattamente; chi sfora viene penalizzato con `1/ratio`).
-3. Combina gli score in un **punteggio totale**, pesando di più i macro più carenti e in
-   particolare le proteine (pesi: P 0.40, C 0.25, G 0.20, kcal 0.15).
-4. Ordina e restituisce i **primi 10** alimenti, con la possibilità di riordinare per
-   singolo macro (proteine / grassi / carboidrati / calorie) ed escludere i cibi già nel diario.
+The **Workouts** tab manages the program split by **session** (day). Each
+exercise has: Session, Exercise, Sets, Type, Rest, Notes. **Type** distinguishes
+**compound** from **isolation**; Sets and Rest are free text so both `3` and
+`2-3'` work.
 
-Ogni riga mostra lo score e i grammi apportati per ciascun macro, più un pulsante
-**Aggiungi** per inserire la porzione nel diario.
+- **Load sample program** inserts the example 3-day program (22 exercises,
+  `data/allenamenti.csv`).
+- **Import CSV** with this structure:
+
+```csv
+Session;Exercise;Sets;Type;Rest;Notes
+Day 1 - Upper A;Dumbbell bench press;3;compound;2-3';
+Day 1 - Upper A;Lateral raises;3;isolation;60-90";
+```
+
+- Delimiter `,` or `;` auto-detected; header recognised automatically.
+- `Type` accepts `compound`/`isolation` (also `multi`/`iso`).
+- `Session`, `Type` and `Notes` are optional.
+- The import **merges**: same session + exercise = update, otherwise add.
+- You can also **export** the program or download a CSV **template**.
+- **Fullscreen rest timer**: each exercise has a button that starts a fullscreen
+  countdown from the *Rest* column (`2-3'` → 180s, `60-90"` → 90s, `1'30"` → 90s).
+  It includes pause, ±15s, a progress ring, a beep and a vibration at the end.
+
+## Greedy algorithm (score per macro)
+
+In the **Diary** tab, below the totals, the app suggests **what to eat to finish
+the day** by scoring the whole food table:
+
+1. Compute the remaining need `target - consumed` for kcal, protein, fat and carbs.
+2. For each food, with its suggested portion (`Max`, else `Min`, else 100 g),
+   compute a **per-macro score**: how much the portion covers that macro's
+   remainder (100% = exactly covers it; overshooting is penalised with `1/ratio`).
+3. Combine the scores into a **total score**, weighting the most deficient macros
+   and especially protein (weights: P 0.40, C 0.25, F 0.20, kcal 0.15).
+4. Sort and return the **top 10** foods, with the option to re-sort by a single
+   macro (protein / fat / carbs / calories) and exclude foods already in the diary.
+
+Each row shows the score and the grams it contributes per macro, plus an **Add**
+button to put the portion in the diary.
 
 ## 🐳 Self-hosting (docker compose)
 
-Il repo include un backend in **Go** che serve l'app e conserva i dati in
-**SQLite** (una riga per record). I client sincronizzano in modo **incrementale**
-(`/api/sync`) e possono ricevere gli aggiornamenti in **tempo reale** via SSE
-(`/api/events`). Niente autenticazione: è pensato per girare in **LAN / dietro
-Tailscale**, non esposto su internet.
+The repo includes a **Go** backend that serves the app and stores data in
+**SQLite** (one row per record). Clients sync **incrementally** (`/api/sync`) and
+can receive updates **in real time** via SSE (`/api/events`). There is no
+authentication: it is meant to run on a **private network / LAN**, not exposed
+to the internet.
 
-> **Fase di migrazione.** La vecchia API a blob opaco (`/api/kv`) resta attiva
-> come *vista* su SQLite: un `GET` ricostruisce il blob dai record, un `PUT` lo
-> importa record per record. Così i browser che usano ancora il client
-> precedente migrano da soli al primo sync, senza perdere dati e senza cambiare
-> nulla. Il vecchio file blob viene letto una sola volta (e conservato come
-> backup); quando tutti i client useranno `/api/sync`, `/api/kv` potrà sparire.
+> **Migration phase.** The old opaque-blob API (`/api/kv`) stays available as a
+> *view* over SQLite: a `GET` rebuilds the blob from records, a `PUT` imports it
+> record by record. Browsers still using the previous client migrate on their
+> first sync, without data loss. The old blob file is read once (and kept as a
+> backup); once all clients use `/api/sync`, `/api/kv` can go away.
 
-### Avvio rapido
+### Quick start
 
 ```bash
 cp .env.example .env
 docker compose up --build
-# apri http://localhost:8080
+# open http://localhost:8080
 ```
 
 ### API
 
-| Metodo | Path | Descrizione |
+| Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/sync/{key}?since=TS` | Delta incrementale: record e tombstone con `updated > TS` |
-| `POST` | `/api/sync/{key}` | Invia le modifiche locali (last-write-wins) |
-| `GET` | `/api/events/{key}` | Stream **SSE** con le modifiche in tempo reale |
-| `GET` | `/api/kv/{key}` | *(compat)* Blob ricostruito dai record |
-| `PUT` | `/api/kv/{key}` | *(compat/migrazione)* Importa un blob record per record |
-| `DELETE` | `/api/kv/{key}` | *(compat)* Elimina tutti i record della chiave |
-| `POST` | `/mcp` | Server MCP (Streamable HTTP, JSON-RPC 2.0) per gli agenti |
+| `GET` | `/api/sync/{key}?since=TS` | Incremental delta: records and tombstones with `updated > TS` |
+| `POST` | `/api/sync/{key}` | Send local changes (last-write-wins) |
+| `GET` | `/api/events/{key}` | **SSE** stream of real-time changes |
+| `GET` | `/api/kv/{key}` | *(compat)* Blob rebuilt from records |
+| `PUT` | `/api/kv/{key}` | *(compat/migration)* Import a blob record by record |
+| `DELETE` | `/api/kv/{key}` | *(compat)* Delete all records for the key |
+| `POST` | `/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) for agents |
 | `GET` | `/healthz` | Healthcheck |
-| `*` | `/` | Serve l'app statica (`index.html`) |
+| `*` | `/` | Serve the static app (`index.html`) |
 
-I dati finiscono in `DATA_DIR/tracker.db` (SQLite, WAL). Le chiavi sono
-`[A-Za-z0-9_-]{1,64}` e isolano i dataset tra loro.
+Data lives in `DATA_DIR/tracker.db` (SQLite, WAL). Keys are
+`[A-Za-z0-9_-]{1,64}` and isolate datasets from each other.
 
-#### Record e merge
+#### Records and merge
 
-Ogni record è `(collection, id, data, updated, deleted)`:
+Each record is `(collection, id, data, updated, deleted)`:
 
 | Collection | id | data |
 |---|---|---|
-| `entries` | data (`YYYY-MM-DD`) | peso, calorie, tipo giornata |
-| `foods` | id alimento | nome, macro per 100 g, … |
-| `diary` | data | tipo giornata + voci del diario |
-| `workouts` | id esercizio | sessione, serie, ripetizioni, … |
-| `done` | `data\0id` | spunta di un esercizio in un giorno |
+| `entries` | date (`YYYY-MM-DD`) | weight, calories, day type |
+| `foods` | food id | name, macros per 100 g, … |
+| `diary` | date | day type + diary items |
+| `workouts` | exercise id | session, sets, reps, … |
+| `done` | `date\0id` | a workout's checked state for a day |
 
-Il merge è **last-write-wins** sul timestamp del client; a parità vince la
-*tombstone*, altrimenti la modifica in arrivo. Salvare una modifica è una singola
-`UPSERT`: non si riscrive più tutto il blob.
+The merge is **last-write-wins** on the client timestamp; on a tie the
+*tombstone* wins, otherwise the incoming change. Saving a change is a single
+`UPSERT`: the whole blob is no longer rewritten.
 
 #### gzip
 
-La compressione è solo di trasporto: la risposta di `/api/kv` viene compressa se
-il client manda `Accept-Encoding: gzip`, e un upload gzip viene decompresso
-prima dell'import. Non c'è più un blob compresso "a riposo": lo storage è
-SQLite.
+Compression is transport-only: the `/api/kv` response is compressed if the
+client sends `Accept-Encoding: gzip`, and a gzip upload is decompressed before
+import. There is no compressed blob "at rest" anymore: storage is SQLite.
 
-### Sync nell'app
+### Sync in the app
 
-La sincronizzazione è **attiva di default** (stesso server che serve l'app, chiave
-`default`): non serve configurarla. Il pannello **Impostazioni** mostra lo stato,
-permette di forzare **Sincronizza ora** / **Invia al server** / **Ricarica dal
-server** e, se serve, di puntare a un altro server o a un'altra chiave.
+Sync is **on by default** (same server that serves the app, key `default`): no
+configuration needed. The **Settings** panel shows the status, lets you force
+**Sync now** / **Send to server** / **Reload from server**, and point to another
+server or key.
 
-La sincronizzazione è **per record**, non a blob intero:
+Sync is **per record**, not whole-blob:
 
-- ogni record (peso/calorie per data, giornata di diario, alimento o esercizio
-  per id, singola spunta di allenamento) porta un timestamp di ultima modifica;
-- al sync l'app chiede solo le modifiche più recenti del suo ultimo pull
-  (`GET /api/sync/{key}?since=…`) e invia solo i record in attesa in una coda
-  locale (*outbox*): niente più blob interi da riscrivere;
-- gli aggiornamenti degli altri dispositivi arrivano anche **in tempo reale**
-  via SSE (`GET /api/events/{key}`), senza aspettare il prossimo sync;
-- un dispositivo rimasto indietro **non può più cancellare** le giornate
-  registrate su un altro dispositivo: le unisce;
-- le eliminazioni viaggiano come *tombstone*, così non vengono resuscitate da
-  una copia vecchia.
+- every record (weight/calories per date, a diary day, a food or exercise by id,
+  a single workout check) carries a last-modified timestamp;
+- on sync the app asks only for changes newer than its last pull
+  (`GET /api/sync/{key}?since=…`) and sends only pending records from a local
+  outbox: no more rewriting whole blobs;
+- other devices' updates arrive **in real time** via SSE
+  (`GET /api/events/{key}`), without waiting for the next sync;
+- a device that fell behind **can no longer delete** days recorded on another
+  device: it merges them;
+- deletions travel as *tombstones*, so they are not resurrected by an old copy.
 
-L'invio è automatico e resiliente:
+Sending is automatic and resilient:
 
-- debounce breve su ogni modifica, con **retry** a backoff (3 s → max 5 min);
-- si riattiva quando il dispositivo torna **online**, quando l'app torna in
-  primo piano e ogni minuto mentre è visibile;
-- un tentativo best-effort viene fatto anche alla chiusura della pagina
-  (`pagehide`, con `keepalive`);
-- la card mostra quante **modifiche restano da inviare** e l'esito dell'ultimo
-  tentativo.
+- short debounce on every change, with backoff **retry** (3 s → max 5 min);
+- it resumes when the device comes back **online**, when the app returns to the
+  foreground, and every minute while visible;
+- a best-effort attempt is also made on page close (`pagehide`, with `keepalive`);
+- the card shows how many **changes are still pending** and the last attempt's
+  result.
 
-La logica di merge per record resta la stessa di sempre (è estratta in
-`SYNC-CORE` e coperta dai test): cambia solo il trasporto, da blob intero a delta
-incrementali + SSE. I dati restano anche in **LocalStorage**, che fa da cache
-locale sul dispositivo.
+The per-record merge logic is unchanged (extracted into `SYNC-CORE` and covered
+by tests): only the transport changed, from whole blob to incremental deltas +
+SSE. Data also stays in **LocalStorage**, which acts as a local cache.
 
-### MCP (per gli agenti)
+### MCP (for agents)
 
-Lo stesso processo espone un server **MCP** (Model Context Protocol, Streamable
-HTTP) su `POST /mcp`, così un agente può **ispezionare e ampliare** il database
-alimenti, il programma allenamenti e il diario alimentare. Niente secondo
-processo né dipendenze aggiuntive per il protocollo: è JSON-RPC 2.0 scritto a
-mano (l'unica dipendenza del server è il driver SQLite puro-Go).
+The same process exposes an **MCP** server (Model Context Protocol, Streamable
+HTTP) at `POST /mcp`, so an agent can **inspect and extend** the food database,
+the workout program and the food diary. No second process or extra protocol
+dependency: it is hand-written JSON-RPC 2.0 (the server's only dependency is the
+pure-Go SQLite driver).
 
-| Tool | Cosa fa |
+| Tool | What it does |
 |---|---|
-| `tracker_summary` | Conteggi, sessioni, categorie, ultime registrazioni, target |
-| `list_foods` | Elenca e cerca i cibi (per nome e categoria) |
-| `add_food` | Aggiunge o aggiorna un alimento (upsert per nome) |
-| `list_workouts` | Elenca gli esercizi (filtro per sessione/nome) |
-| `add_workout` | Aggiunge o aggiorna un esercizio (upsert per sessione+nome) |
-| `list_diary` | Legge il diario: un giorno completo o l'elenco dei giorni recenti |
-| `add_diary_item` | Aggiunge un alimento a un giorno (macro calcolate dai grammi) |
-| `update_diary_item` | Cambia i grammi di una voce e ricalcola le macro |
-| `remove_diary_item` | Rimuove una voce dal giorno |
-| `set_diary_type` | Segna il giorno come allenamento o riposo |
+| `tracker_summary` | Counts, sessions, categories, latest entries, targets |
+| `list_foods` | List and search foods (by name and category) |
+| `add_food` | Add or update a food (upsert by name) |
+| `list_workouts` | List exercises (filter by session/name) |
+| `add_workout` | Add or update an exercise (upsert by session+name) |
+| `list_diary` | Read the diary: one full day or a list of recent days |
+| `add_diary_item` | Add a food to a day (macros computed from grams) |
+| `update_diary_item` | Change an item's grams and recompute macros |
+| `remove_diary_item` | Remove an item from a day |
+| `set_diary_type` | Mark the day as training or rest |
 
-Le scritture MCP agiscono direttamente sui **record** in SQLite: toccano solo le
-righe interessate (un alimento, un esercizio, un giorno di diario) e ne
-pubblicano il cambio via SSE, così gli altri client si allineano subito senza
-aspettare il prossimo sync.
+MCP writes act directly on the SQLite **records**: they touch only the affected
+rows and publish the change via SSE, so other clients catch up immediately
+without waiting for the next sync.
 
-Configurazione in un client MCP (esempio con [pi](https://pi.dev)):
+Configuring an MCP client (example with [pi](https://pi.dev)):
 
 ```json
 {
   "mcpServers": {
-    "tracker": { "url": "http://tracker.lab.heiz.cc/mcp" }
+    "tracker": { "url": "http://localhost:8080/mcp" }
   }
 }
 ```
 
-Da riga di comando:
+From the command line:
 
 ```bash
 pi mcp add tracker --url http://localhost:8080/mcp
 ```
 
-Ogni tool accetta un parametro opzionale `key` per scegliere il blob di sync
+Each tool accepts an optional `key` parameter to choose the sync dataset
 (default `default`).
 
-### Sviluppo
+### Development
 
 ```bash
-make run      # :8080, serve ./index.html, blob in ./data
-make test     # test Go + JS (merge/sync per-record)
-make test-js  # solo i test JS del sync
-make image REGISTRY=registry.lab.heiz.cc   # build + push (linux/arm64)
+make run      # :8080, serves ./index.html, data in ./data
+make test     # Go + JS tests (per-record merge/sync)
+make test-js  # JS sync tests only
+make image REGISTRY=registry.example.com   # build + push (linux/arm64)
 ```
 
-### Homelab
+## 🔄 Alternative without a server: JSON backup
 
-Lo stack per l'homelab è in `~/code/nix` → [`hosts/lab/docker/tracker/`](../nix/hosts/lab/docker/tracker)
-(Traefik + registry privato, `tracker.lab.heiz.cc`).
+If you don't want to self-host, the app has **Export backup (.json)** and
+**Import backup** at the bottom: move the file with iCloud Drive / Google Drive /
+AirDrop / WhatsApp. It contains weight/calories, the diary, the food database and
+the workout program.
 
-## 🔄 Alternativa senza server: backup JSON
+## Possible next steps
 
-Se non vuoi self-hostare, in fondo all'app ci sono **Esporta backup (.json)** e
-**Importa backup**: sposti il file con iCloud Drive / Google Drive / AirDrop /
-WhatsApp. Contiene peso/calorie, diario, database cibi e programma allenamenti.
-
-## Prossimi passi possibili
-
-- [x] Tracciamento macro giornalieri (proteine, carboidrati, grassi)
-- [ ] Promemoria settimanale per registrare peso e calorie
-- [ ] Export dei dati (peso, calorie, diario) in formato CSV
+- [x] Daily macro tracking (protein, carbs, fat)
+- [ ] Weekly reminder to log weight and calories
+- [ ] Export data (weight, calories, diary) as CSV

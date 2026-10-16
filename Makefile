@@ -39,8 +39,8 @@ docker-up:
 docker-down:
 	docker compose down
 
-## image: build and push to a private registry, e.g. make image REGISTRY=registry.lab.heiz.cc
+## image: build and push to a registry, e.g. make image REGISTRY=registry.example.com
 image:
-	@test -n "$(REGISTRY)" || (echo "usage: make image REGISTRY=registry.lab.heiz.cc"; exit 1)
+	@test -n "$(REGISTRY)" || (echo "usage: make image REGISTRY=registry.example.com"; exit 1)
 	docker build --platform $(PLATFORM) -t $(REGISTRY)/tracker:latest .
 	docker push $(REGISTRY)/tracker:latest

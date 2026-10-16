@@ -26,11 +26,11 @@ services:
       - tracker-data:/data
 
     ports:
-      # For quick local use. Remove when Traefik fronts it.
+      # For quick local use. Remove when a reverse proxy fronts it.
       - "${PORT:-8080}:8080"
 
-    # --- Homelab deployment (Traefik + private registry):
-    #     see README → "Self-hosting / homelab".
+    # --- Behind a reverse proxy:
+    #     uncomment and adapt to your setup.
     # networks:
     #   - proxy
     # labels:
