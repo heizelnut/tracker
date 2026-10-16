@@ -9,7 +9,7 @@ import assert from 'node:assert';
 import {loadCore} from './extract-core.mjs';
 
 const core = loadCore();
-const {syncMerge, emptyMeta, syncStampChanges, syncChangedKeys, syncDeltaState, SYNC_COLLECTIONS} = core;
+const {syncMerge, emptyMeta, syncStampChanges, syncChangedKeys, syncDeltaState, syncInferTs, SYNC_COLLECTIONS} = core;
 
 // Costruisce uno "stato dispositivo" come lo vede il client.
 function state(init = {}) {
@@ -159,6 +159,12 @@ test('il merge converge: riapplicarlo non cambia più lo stato locale', () => {
 
   assert.deepEqual(again.state.entries, first.entries);
   assert.equal(again.localChanged, false);
+});
+
+test('syncInferTs usa mezzanotte UTC, non mezzogiorno', () => {
+  const ts = syncInferTs('diary', '2026-01-10', null);
+  assert.equal(ts, Date.parse('2026-01-10T00:00:00Z'));
+  assert.ok(ts < Date.parse('2026-01-10T12:00:00Z'), 'un record inferito non deve sembrare più recente di una modifica reale');
 });
 
 test('syncChangedKeys riporta nuovi, modificati e rimossi', () => {

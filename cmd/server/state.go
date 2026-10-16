@@ -170,8 +170,10 @@ func splitDoneKey(k string) (string, string) {
 	return date, id
 }
 
-// inferTS gives legacy blobs (no meta.updated) a stable timestamp: midday of
-// the record's date, or 1 when there is no date. Mirrors syncInferTs().
+// inferTS gives legacy blobs (no meta.updated) a stable, conservative
+// timestamp: midnight UTC of the record's date, or 1 when there is no date.
+// Midnight (not midday) matters: an inferred record must never look newer than
+// a real edit made earlier that same day on another device.
 func inferTS(collection, id string, data map[string]any) int64 {
 	var date string
 	switch collection {
@@ -185,7 +187,7 @@ func inferTS(collection, id string, data map[string]any) int64 {
 		return 1
 	}
 	if t, err := time.Parse("2006-01-02", date); err == nil {
-		return t.Add(12 * time.Hour).UnixMilli()
+		return t.UnixMilli()
 	}
 	return 1
 }
