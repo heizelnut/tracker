@@ -13,6 +13,7 @@ riducendo gradualmente il grasso, con un deficit calorico moderato.
 | [`index.html`](./index.html) | App web (single file) per tracciare peso, calorie e macro. Salva tutto in **LocalStorage**. |
 | [`cmd/server`](./cmd/server) | Backend (Go + SQLite) che serve l'app, sincronizza i record in modo incrementale, espone un server **MCP** per gli agenti e mantiene la vecchia API a blob per la migrazione. |
 | [`Dockerfile`](./Dockerfile) · [`docker-compose.yml`](./docker-compose.yml) | Self-hosting in un container. |
+| [`manifest.json`](./manifest.json) · [`sw.js`](./sw.js) · [`favicon.svg`](./favicon.svg) · [`icons/`](./icons) | PWA: icona, installabile sulla home screen, funziona offline. |
 | [`data/cibi.csv`](./data/cibi.csv) | Database alimenti d'esempio, esportato dal foglio **“Cibo”** di `~/Documents/dieta/macros.xlsx`. |
 | [`data/allenamenti.csv`](./data/allenamenti.csv) | Scheda allenamento 3 giorni d'esempio (dalla conversazione originale). |
 | [`docs/scheda-allenamento.md`](./docs/scheda-allenamento.md) | Scheda palestra 3 giorni (2× upper / 2× lower). |
@@ -63,6 +64,7 @@ In dettaglio:
 - 💾 Salvataggio automatico in LocalStorage
 - 🗑️ Eliminazione singola registrazione o di tutto lo storico
 - 📱 Interfaccia responsive per Android
+- 📲 **PWA**: installabile sulla home screen (standalone, con icona) e utilizzabile offline
 - 🥩 **Database cibi** importabile da CSV (vedi sotto)
 - ➕ **Aggiunta/modifica manuale degli alimenti** dall'interfaccia
 - 📓 **Diario alimentare**: aggiungi gli alimenti con i grammi e l'app calcola kcal + macro vs target

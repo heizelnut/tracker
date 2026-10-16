@@ -16,7 +16,8 @@ RUN apk add --no-cache ca-certificates tzdata \
 
 WORKDIR /app
 COPY --from=build /out/tracker /app/tracker
-COPY index.html /app/index.html
+COPY index.html manifest.json sw.js favicon.svg favicon.ico /app/
+COPY icons /app/icons
 
 # The SQLite database (and any legacy blobs left to migrate) live on /data;
 # ownership matters for the first mount.
