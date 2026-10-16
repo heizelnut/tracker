@@ -58,7 +58,7 @@ async function withServer(t) {
 
 const rec = (collection, id, data, updated) => ({collection, id, data, updated});
 const tomb = (collection, id, updated) => ({collection, id, deleted: true, updated});
-const device = () => ({entries: [], foods: [], diary: {}, workouts: [], done: {}, meta: core.emptyMeta()});
+const device = () => ({entries: [], foods: [], diary: {}, workouts: [], lifts: [], done: {}, meta: core.emptyMeta()});
 
 async function push(base, key, records) {
   const res = await fetch(`${base}/api/sync/${key}`, {

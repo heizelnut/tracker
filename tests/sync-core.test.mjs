@@ -14,8 +14,8 @@ const {syncMerge, emptyMeta, syncStampChanges, syncChangedKeys, syncDeltaState, 
 // Costruisce uno "stato dispositivo" come lo vede il client.
 function state(init = {}) {
   const meta = emptyMeta();
-  const s = {entries: [], foods: [], diary: {}, workouts: [], done: {}, meta};
-  for (const k of ['entries', 'foods', 'diary', 'workouts', 'done']) {
+  const s = {entries: [], foods: [], diary: {}, workouts: [], lifts: [], done: {}, meta};
+  for (const k of ['entries', 'foods', 'diary', 'workouts', 'lifts', 'done']) {
     if (init[k] !== undefined) s[k] = init[k];
   }
   for (const c of SYNC_COLLECTIONS) {
@@ -198,4 +198,23 @@ test('un delta server non tocca i record locali che non contiene', () => {
   const {state: merged} = syncMerge(local, remote);
 
   assert.equal(merged.entries.length, 1, 'il record locale resta');
+});
+
+test('i set registrati (rep max) si uniscono per id', () => {
+  const local = state({lifts: [{id: 'l1', workoutId: 'w1', name: 'Panca', weight: 80, reps: 5}], updated: {lifts: {l1: 100}}});
+  const remote = state({lifts: [{id: 'l2', workoutId: 'w1', name: 'Panca', weight: 85, reps: 3}], updated: {lifts: {l2: 200}}});
+
+  const {state: merged} = syncMerge(local, remote);
+
+  assert.deepEqual(merged.lifts.map((l) => l.id).sort(), ['l1', 'l2']);
+});
+
+test('un set (rep max) eliminato viaggia come tombstone', () => {
+  const local = state({lifts: [{id: 'l1', weight: 80, reps: 5}], updated: {lifts: {l1: 100}}});
+  const remote = state({tombstones: {lifts: {l1: 200}}});
+
+  const {state: merged} = syncMerge(local, remote);
+
+  assert.equal(merged.lifts.length, 0);
+  assert.equal(merged.meta.tombstones.lifts.l1, 200);
 });

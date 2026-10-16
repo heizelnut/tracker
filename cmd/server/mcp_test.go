@@ -126,7 +126,7 @@ func TestMCPToolsList(t *testing.T) {
 			t.Fatalf("tool %v has no inputSchema", tool["name"])
 		}
 	}
-	for _, want := range []string{"tracker_summary", "list_foods", "add_food", "list_workouts", "add_workout"} {
+	for _, want := range []string{"tracker_summary", "list_foods", "add_food", "list_workouts", "add_workout", "list_lifts", "add_lift", "remove_lift"} {
 		if !names[want] {
 			t.Fatalf("tools/list is missing %q (got %v)", want, names)
 		}
@@ -273,6 +273,78 @@ func TestMCPAddWorkoutAndSessions(t *testing.T) {
 	one := mcpCall(t, srv, "list_workouts", map[string]any{"session": "giorno 2"})
 	if one["count"].(float64) != 1 {
 		t.Fatalf("session filter count = %v, want 1", one["count"])
+	}
+}
+
+func TestMCPLiftsRepMax(t *testing.T) {
+	srv := newTestServer(t)
+	mcpCall(t, srv, "add_workout", map[string]any{"session": "Giorno 1", "name": "Panca", "sets": "3", "type": "compound"})
+
+	// 80 kg x5 -> Epley 93.3; 90 kg x1 -> 90; 85 kg x3 -> 93.5 (the best).
+	mcpCall(t, srv, "add_lift", map[string]any{"exercise": "Panca", "weight": 80, "reps": 5, "date": "2026-06-01"})
+	mcpCall(t, srv, "add_lift", map[string]any{"exercise": "panca", "weight": 90, "reps": 1, "date": "2026-06-02"})
+	mcpCall(t, srv, "add_lift", map[string]any{"exercise": "Panca", "weight": 85, "reps": 3, "date": "2026-06-03"})
+
+	list := mcpCall(t, srv, "list_lifts", map[string]any{})
+	if list["total"].(float64) != 3 {
+		t.Fatalf("total = %v, want 3", list["total"])
+	}
+	groups := list["repMaxes"].([]any)
+	if len(groups) != 1 {
+		t.Fatalf("repMaxes = %v, want one exercise", groups)
+	}
+	g := groups[0].(map[string]any)
+	if got := g["best1RM"].(float64); got != 93.5 {
+		t.Fatalf("best1RM = %v, want 93.5", got)
+	}
+	maxByReps := g["maxByReps"].(map[string]any)
+	if got := maxByReps["5"].(float64); got != 80 {
+		t.Fatalf("5RM = %v, want 80", got)
+	}
+	if got := maxByReps["1"].(float64); got != 90 {
+		t.Fatalf("1RM = %v, want 90", got)
+	}
+
+	byQuery := mcpCall(t, srv, "list_lifts", map[string]any{"query": "panca"})
+	if byQuery["count"].(float64) != 3 {
+		t.Fatalf("query count = %v, want 3", byQuery["count"])
+	}
+
+	// The lift reaches the blob and is stamped so the app pulls it per record.
+	blob := getBlob(t, srv, "default")
+	blobLifts := blob["lifts"].([]any)
+	if len(blobLifts) != 3 {
+		t.Fatalf("lifts in blob = %v", blobLifts)
+	}
+	id := blobLifts[0].(map[string]any)["id"].(string)
+	stamps := blob["meta"].(map[string]any)["updated"].(map[string]any)["lifts"].(map[string]any)
+	if _, ok := stamps[id]; !ok {
+		t.Fatalf("lift not stamped: %v", stamps)
+	}
+
+	removed := mcpCall(t, srv, "remove_lift", map[string]any{"id": id})
+	if removed["removed"].(map[string]any)["id"].(string) != id {
+		t.Fatal("removed the wrong lift")
+	}
+	list2 := mcpCall(t, srv, "list_lifts", map[string]any{})
+	if list2["total"].(float64) != 2 {
+		t.Fatalf("total after remove = %v, want 2", list2["total"])
+	}
+}
+
+func TestMCPAddLiftErrors(t *testing.T) {
+	srv := newTestServer(t)
+	if msg := mcpToolError(t, srv, "add_lift", map[string]any{"weight": 80, "reps": 5}); !strings.Contains(msg, "exercise") {
+		t.Fatalf("missing exercise msg = %q", msg)
+	}
+	if msg := mcpToolError(t, srv, "add_lift", map[string]any{"exercise": "Panca", "weight": 0, "reps": 5}); !strings.Contains(msg, "weight") {
+		t.Fatalf("bad weight msg = %q", msg)
+	}
+	if msg := mcpToolError(t, srv, "add_lift", map[string]any{"exercise": "Panca", "weight": 80, "reps": 0}); !strings.Contains(msg, "reps") {
+		t.Fatalf("bad reps msg = %q", msg)
+	}
+	if msg := mcpToolError(t, srv, "remove_lift", map[string]any{"id": "nope"}); !strings.Contains(msg, "no lift") {
+		t.Fatalf("unknown id msg = %q", msg)
 	}
 }
 

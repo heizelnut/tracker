@@ -60,6 +60,7 @@ In detail:
 - ➕ **Manual food add/edit** from the UI
 - 📓 **Food diary**: add foods with grams; the app computes kcal + macros vs target
 - ↕️ **Reorder diary entries**: drag the `⠿` handle (desktop) or use `▲`/`▼` (mobile)
+- 🏅 **Rep max**: log weight × reps on an exercise and track its rep maxes and estimated 1RM
 - 🤖 **Greedy suggestion**: what to eat for the rest of the day to hit kcal and macros
 
 > Data stays **on the device/browser** and is not sent to any server unless you
@@ -127,6 +128,13 @@ Day 1 - Upper A;Lateral raises;3;isolation;60-90";
 - **Fullscreen rest timer**: each exercise has a button that starts a fullscreen
   countdown from the *Rest* column (`2-3'` → 180s, `60-90"` → 90s, `1'30"` → 90s).
   It includes pause, ±15s, a progress ring, a beep and a vibration at the end.
+- **🏅 Rep max per exercise**: the 🏅 button on a row opens a small editor where
+  you log a set (date, weight in kg, reps). The app keeps, for each exercise, the
+  **rep max** — the best weight for every number of reps — and estimates the
+  **1RM** with the Epley formula (`w × (1 + reps/30)`). The best 1RM also shows
+  as a pill next to the exercise name. Logging a set also ticks the exercise as
+  done for that date. Sets sync per record like everything else and are included
+  in the JSON backup.
 
 ## Greedy algorithm (score per macro)
 
@@ -193,7 +201,8 @@ Each record is `(collection, id, data, updated, deleted)`:
 | `entries` | date (`YYYY-MM-DD`) | weight, calories, day type |
 | `foods` | food id | name, macros per 100 g, … |
 | `diary` | date | day type + diary items |
-| `workouts` | exercise id | session, sets, reps, … |
+| `workouts` | exercise id | session, sets, type, … |
+| `lifts` | set id | logged set: exercise, date, weight, reps |
 | `done` | `date\0id` | a workout's checked state for a day |
 
 The merge is **last-write-wins** on the client timestamp; on a tie the
@@ -243,7 +252,8 @@ SSE. Data also stays in **LocalStorage**, which acts as a local cache.
 
 The same process exposes an **MCP** server (Model Context Protocol, Streamable
 HTTP) at `POST /mcp`, so an agent can **inspect and extend** the food database,
-the workout program and the food diary. No second process or extra protocol
+the food database, the workout program, the logged sets (rep max) and the food
+diary. No second process or extra protocol
 dependency: it is hand-written JSON-RPC 2.0 (the server's only dependency is the
 pure-Go SQLite driver).
 
@@ -254,6 +264,9 @@ pure-Go SQLite driver).
 | `add_food` | Add or update a food (upsert by name) |
 | `list_workouts` | List exercises (filter by session/name) |
 | `add_workout` | Add or update an exercise (upsert by session+name) |
+| `list_lifts` | List logged sets, with per-exercise rep maxes and estimated 1RM |
+| `add_lift` | Log a set (exercise, weight, reps) for rep-max tracking |
+| `remove_lift` | Remove a logged set |
 | `list_diary` | Read the diary: one full day or a list of recent days |
 | `add_diary_item` | Add a food to a day (macros computed from grams) |
 | `update_diary_item` | Change an item's grams and recompute macros |

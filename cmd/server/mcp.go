@@ -20,12 +20,13 @@ import (
 // answering with plain application/json (the spec allows this, and every client
 // that asks for text/event-stream also accepts JSON).
 //
-// The tools know two of the collections inside the otherwise opaque blob:
-// `foods` (the food database) and `workouts` (the training program). Writes are
-// read-merged-write: the new record is stamped in `meta.updated`, exactly like
-// the browser does, so the next app sync pulls it in per record instead of
-// fighting over the whole blob. Unknown top-level keys (entries, diary, done,
-// …) are passed through untouched.
+// The tools know the collections inside the otherwise opaque blob:
+// `foods` (the food database), `workouts` (the training program), `lifts`
+// (logged sets used for rep-max tracking) and `diary` (what was eaten). Writes
+// are read-merged-write: the new record is stamped in `meta.updated`, exactly
+// like the browser does, so the next app sync pulls it in per record instead of
+// fighting over the whole blob. Unknown top-level keys (entries, done, …) are
+// passed through untouched.
 
 // mcpProtocolVersion is the newest revision of the protocol we implement. The
 // client names a version in initialize; we echo it back when we know it and
@@ -51,6 +52,9 @@ useful to edit from outside the app:
 
   - foods    — the food database. Macros are per 100 g.
   - workouts — the training program, split into sessions (days).
+  - lifts    — logged sets (date, exercise, weight in kg, reps) used to track
+               each exercise's rep max: the server derives the best weight per
+               rep count and an estimated 1RM (Epley).
   - diary    — what was eaten, day by day: one record per date holding the day
                type (training/rest) and the list of foods with their grams.
 
@@ -59,7 +63,8 @@ and return it. Writes are merged per record with the app (a newer timestamp
 wins), so a new food, exercise or diary day shows up on the device at its next
 sync — and the device's own edits are not lost. Foods are upserted by name,
 workouts by (session, exercise name); the diary is keyed by date, and the items
-inside a day are addressed by their id or food name.
+inside a day are addressed by their id or food name. Lifts are append-only sets
+addressed by their id.
 
 Use "key" to target a different sync key/blob; it defaults to "default".`
 
@@ -302,6 +307,52 @@ func mcpTools() []map[string]any {
 			"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
 		},
 		{
+			"name":        "list_lifts",
+			"title":       "List rep-max sets",
+			"description": "List the sets logged for rep-max tracking (date, exercise, weight in kg, reps). The response also derives, per exercise, the best estimated 1RM (Epley) and the maximum weight for each rep count (the rep maxes). Filter by session or exercise name.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"session": str("Only sets of exercises in this session (exact, case-insensitive)."),
+					"query":   str("Case-insensitive substring matched against the exercise name."),
+					"key":     keyProp,
+				},
+			},
+			"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
+		},
+		{
+			"name":        "add_lift",
+			"title":       "Log a set (rep max)",
+			"description": "Log one set for an exercise: weight in kg and reps. The exercise is resolved against the training program by id, exact name or name substring (optionally restricted to a session); if it is not found the set is stored with the given free-text name. Returns the stored set and its estimated 1RM.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"exercise": str("Exercise id, exact name or name substring. Required."),
+					"weight":   num("Weight lifted in kg. Required, must be positive."),
+					"reps":     intProp("Repetitions performed. Required.", 1, 1000),
+					"date":     str("Day of the set, YYYY-MM-DD. Defaults to today."),
+					"session":  str("Session to disambiguate exercises with the same name."),
+					"key":      keyProp,
+				},
+				"required": []string{"exercise", "weight", "reps"},
+			},
+			"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
+		},
+		{
+			"name":        "remove_lift",
+			"title":       "Remove a logged set",
+			"description": "Remove one logged set by its id. Returns the removed set.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id":  str("Id of the set to remove. Required."),
+					"key": keyProp,
+				},
+				"required": []string{"id"},
+			},
+			"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false},
+		},
+		{
 			"name":        "list_diary",
 			"title":       "Read the food diary",
 			"description": "Read the diary day by day. With `date` (YYYY-MM-DD) returns that day's type, items (id, food, grams, macros) and totals. Without it, lists recent days as summaries (date, type, item count, totals), newest first, optionally filtered by `from`/`to`.",
@@ -396,6 +447,12 @@ func (s *server) runTool(name string, args map[string]any) (any, error) {
 		return s.toolListWorkouts(args)
 	case "add_workout":
 		return s.toolAddWorkout(args)
+	case "list_lifts":
+		return s.toolListLifts(args)
+	case "add_lift":
+		return s.toolAddLift(args)
+	case "remove_lift":
+		return s.toolRemoveLift(args)
 	case "list_diary":
 		return s.toolListDiary(args)
 	case "add_diary_item":
@@ -426,6 +483,10 @@ func (s *server) toolSummary(args map[string]any) (any, error) {
 		return nil, err
 	}
 	workouts, err := decodeObjects(state["workouts"])
+	if err != nil {
+		return nil, err
+	}
+	lifts, err := decodeObjects(state["lifts"])
 	if err != nil {
 		return nil, err
 	}
@@ -470,6 +531,7 @@ func (s *server) toolSummary(args map[string]any) (any, error) {
 		"counts": map[string]any{
 			"foods":     len(foods),
 			"workouts":  len(workouts),
+			"lifts":     len(lifts),
 			"entries":   len(entries),
 			"diaryDays": len(decodeMapKeys(state["diary"])),
 		},
@@ -688,6 +750,262 @@ func (s *server) toolAddWorkout(args map[string]any) (any, error) {
 		return nil, err
 	}
 	return map[string]any{"created": created, "workout": workout}, nil
+}
+
+// --- Rep max (logged sets) ---------------------------------------------------
+
+// toolListLifts returns the logged sets plus a per-exercise summary with the best
+// estimated 1RM and the max weight for each rep count.
+func (s *server) toolListLifts(args map[string]any) (any, error) {
+	key, err := mcpKey(args)
+	if err != nil {
+		return nil, err
+	}
+	state, err := s.loadState(key)
+	if err != nil {
+		return nil, err
+	}
+	lifts, err := decodeObjects(state["lifts"])
+	if err != nil {
+		return nil, err
+	}
+
+	session := strings.ToLower(argString(args, "session"))
+	query := strings.ToLower(argString(args, "query"))
+	filtered := make([]map[string]any, 0, len(lifts))
+	for _, l := range lifts {
+		if session != "" && strings.ToLower(getString(l, "session")) != session {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(getString(l, "name")), query) {
+			continue
+		}
+		filtered = append(filtered, l)
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		di, dj := getString(filtered[i], "date"), getString(filtered[j], "date")
+		if di != dj {
+			return di > dj
+		}
+		return strings.ToLower(getString(filtered[i], "name")) < strings.ToLower(getString(filtered[j], "name"))
+	})
+
+	return map[string]any{
+		"total":    len(lifts),
+		"count":    len(filtered),
+		"lifts":    filtered,
+		"repMaxes": liftRepMaxes(filtered),
+	}, nil
+}
+
+// toolAddLift appends one logged set. The exercise is resolved against the
+// program when possible, but a free-text name is accepted too.
+func (s *server) toolAddLift(args map[string]any) (any, error) {
+	key, err := mcpKey(args)
+	if err != nil {
+		return nil, err
+	}
+	exercise := argString(args, "exercise")
+	if exercise == "" {
+		return nil, errors.New("exercise is required")
+	}
+	weight, ok := argNumber(args, "weight")
+	if !ok || weight <= 0 || math.IsNaN(weight) || math.IsInf(weight, 0) {
+		return nil, errors.New("weight must be a positive number")
+	}
+	reps, ok := argNumber(args, "reps")
+	if !ok || reps < 1 || reps > 1000 || math.IsNaN(reps) || math.IsInf(reps, 0) {
+		return nil, errors.New("reps must be between 1 and 1000")
+	}
+	date := argString(args, "date")
+	if date == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+	session := argString(args, "session")
+
+	var lift map[string]any
+	err = s.mutateState(key, func(state map[string]json.RawMessage) error {
+		workouts, err := decodeObjects(state["workouts"])
+		if err != nil {
+			return err
+		}
+		lifts, err := decodeObjects(state["lifts"])
+		if err != nil {
+			return err
+		}
+		id := newRecordID()
+		lift = map[string]any{
+			"id":        id,
+			"date":      date,
+			"weight":    weight,
+			"reps":      int(math.Round(reps)),
+			"name":      exercise,
+			"session":   session,
+			"workoutId": "",
+		}
+		if w := findWorkout(workouts, exercise, session); w != nil {
+			lift["workoutId"] = getString(w, "id")
+			lift["name"] = getString(w, "name")
+			lift["session"] = getString(w, "session")
+		}
+		lifts = append(lifts, lift)
+		sort.SliceStable(lifts, func(i, j int) bool {
+			return getString(lifts[i], "date") < getString(lifts[j], "date")
+		})
+		if err := setRaw(state, "lifts", lifts); err != nil {
+			return err
+		}
+		return stampMeta(state, "lifts", id)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"created":      true,
+		"lift":         lift,
+		"estimated1RM": estimate1RM(weight, int(math.Round(reps))),
+	}, nil
+}
+
+// toolRemoveLift removes a set by id. The disappearance is tombstoned by
+// persistDiff, so deletion propagates to the devices.
+func (s *server) toolRemoveLift(args map[string]any) (any, error) {
+	key, err := mcpKey(args)
+	if err != nil {
+		return nil, err
+	}
+	id := argString(args, "id")
+	if id == "" {
+		return nil, errors.New("id is required")
+	}
+	var removed map[string]any
+	err = s.mutateState(key, func(state map[string]json.RawMessage) error {
+		lifts, err := decodeObjects(state["lifts"])
+		if err != nil {
+			return err
+		}
+		kept := make([]map[string]any, 0, len(lifts))
+		for _, l := range lifts {
+			if getString(l, "id") == id {
+				removed = l
+				continue
+			}
+			kept = append(kept, l)
+		}
+		if removed == nil {
+			return fmt.Errorf("no lift with id %q", id)
+		}
+		return setRaw(state, "lifts", kept)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"removed": removed}, nil
+}
+
+// liftRepMaxes derives, per exercise, the max weight for each rep count and the
+// best estimated 1RM. Sets are grouped by workoutId, falling back to the name.
+func liftRepMaxes(lifts []map[string]any) []map[string]any {
+	type group struct {
+		workoutID  string
+		name       string
+		session    string
+		bestE1RM   float64
+		bestWeight float64
+		bestReps   int
+		sets       int
+		lastDate   string
+		maxByReps  map[int]float64
+	}
+	order := []string{}
+	groups := map[string]*group{}
+	for _, l := range lifts {
+		key := getString(l, "workoutId")
+		if key == "" {
+			key = "name:" + strings.ToLower(getString(l, "name"))
+		}
+		g := groups[key]
+		if g == nil {
+			g = &group{workoutID: getString(l, "workoutId"), name: getString(l, "name"), session: getString(l, "session"), maxByReps: map[int]float64{}}
+			groups[key] = g
+			order = append(order, key)
+		}
+		weight := getFloat(l, "weight")
+		reps := int(math.Round(getFloat(l, "reps")))
+		if weight <= 0 || reps <= 0 {
+			continue
+		}
+		g.sets++
+		if cur, ok := g.maxByReps[reps]; !ok || weight > cur {
+			g.maxByReps[reps] = weight
+		}
+		if e := estimate1RM(weight, reps); e > g.bestE1RM {
+			g.bestE1RM, g.bestWeight, g.bestReps = e, weight, reps
+		}
+		if d := getString(l, "date"); d > g.lastDate {
+			g.lastDate = d
+		}
+	}
+	out := make([]map[string]any, 0, len(order))
+	for _, wid := range order {
+		g := groups[wid]
+		maxByReps := map[string]any{}
+		repCounts := make([]int, 0, len(g.maxByReps))
+		for r := range g.maxByReps {
+			repCounts = append(repCounts, r)
+		}
+		sort.Ints(repCounts)
+		for _, r := range repCounts {
+			maxByReps[strconv.Itoa(r)] = g.maxByReps[r]
+		}
+		out = append(out, map[string]any{
+			"workoutId": g.workoutID,
+			"name":      g.name,
+			"session":   g.session,
+			"sets":      g.sets,
+			"lastDate":  g.lastDate,
+			"best1RM":   g.bestE1RM,
+			"bestSet":   map[string]any{"weight": g.bestWeight, "reps": g.bestReps},
+			"maxByReps": maxByReps,
+		})
+	}
+	return out
+}
+
+// estimate1RM is the Epley formula, with a logged single reported as-is.
+func estimate1RM(weight float64, reps int) float64 {
+	if reps <= 1 {
+		return round1(weight)
+	}
+	return round1(weight * (1 + float64(reps)/30))
+}
+
+// findWorkout resolves an exercise reference: id, exact name, then substring.
+// A session, when given, disambiguates exercises that share a name.
+func findWorkout(workouts []map[string]any, ref, session string) map[string]any {
+	if ref == "" {
+		return nil
+	}
+	inSession := func(w map[string]any) bool {
+		return session == "" || strings.EqualFold(getString(w, "session"), session)
+	}
+	for _, w := range workouts {
+		if getString(w, "id") == ref && inSession(w) {
+			return w
+		}
+	}
+	for _, w := range workouts {
+		if strings.EqualFold(getString(w, "name"), ref) && inSession(w) {
+			return w
+		}
+	}
+	lower := strings.ToLower(ref)
+	for _, w := range workouts {
+		if strings.Contains(strings.ToLower(getString(w, "name")), lower) && inSession(w) {
+			return w
+		}
+	}
+	return nil
 }
 
 // --- Diary -------------------------------------------------------------------

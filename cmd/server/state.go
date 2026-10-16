@@ -15,15 +15,16 @@ import (
 // view and the incremental API all agree on what a record is.
 
 // collectionNames mirrors SYNC_COLLECTIONS in index.html.
-var collectionNames = []string{"entries", "foods", "diary", "workouts", "done"}
+var collectionNames = []string{"entries", "foods", "diary", "workouts", "lifts", "done"}
 
 // stateFromRecords rebuilds the blob-style state (entries/foods/diary/workouts/
-// done + meta) from stored records. Non-deleted records become the collections;
+// lifts/done + meta) from stored records. Non-deleted records become the collections;
 // deleted ones become tombstones in meta.
 func stateFromRecords(recs []record) (map[string]json.RawMessage, error) {
 	entries := []map[string]any{}
 	foods := []map[string]any{}
 	workouts := []map[string]any{}
+	lifts := []map[string]any{}
 	diary := map[string]any{}
 	done := map[string]map[string]bool{}
 	updated := map[string]map[string]int64{}
@@ -59,6 +60,8 @@ func stateFromRecords(recs []record) (map[string]json.RawMessage, error) {
 			foods = append(foods, data)
 		case "workouts":
 			workouts = append(workouts, data)
+		case "lifts":
+			lifts = append(lifts, data)
 		case "diary":
 			diary[rec.ID] = data
 		case "done":
@@ -82,6 +85,7 @@ func stateFromRecords(recs []record) (map[string]json.RawMessage, error) {
 	}
 	sortByDate(entries)
 	sortByName(foods)
+	sortByDate(lifts)
 	sort.SliceStable(workouts, func(i, j int) bool {
 		si, sj := getString(workouts[i], "session"), getString(workouts[j], "session")
 		if si != sj {
@@ -99,6 +103,7 @@ func stateFromRecords(recs []record) (map[string]json.RawMessage, error) {
 		"foods":    mustRaw(foods),
 		"diary":    mustRaw(diary),
 		"workouts": mustRaw(workouts),
+		"lifts":    mustRaw(lifts),
 		"done":     mustRaw(done),
 		"meta":     meta,
 	}, nil
@@ -118,7 +123,7 @@ func recordsFromState(state map[string]json.RawMessage) ([]record, error) {
 		return inferTS(coll, id, data)
 	}
 
-	for _, coll := range []string{"entries", "foods", "workouts"} {
+	for _, coll := range []string{"entries", "foods", "workouts", "lifts"} {
 		objs, err := decodeObjects(state[coll])
 		if err != nil {
 			return nil, err
@@ -158,7 +163,7 @@ func recordKey(collection string, data map[string]any) string {
 	switch collection {
 	case "entries":
 		return getString(data, "date")
-	case "foods", "workouts":
+	case "foods", "workouts", "lifts":
 		return getString(data, "id")
 	}
 	return ""

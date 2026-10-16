@@ -112,6 +112,8 @@ test('index.html si avvia e marca le modifiche come da sincronizzare', () => {
     script +
       '\n;globalThis.__app={save,backupData,pendingCount,applyDelta,outboxRecords,KEY,' +
       'getEntries:()=>entries,getFoods:()=>foods,getMeta:()=>meta,' +
+      'setWorkouts:(w)=>{workouts=w},setLifts:(l)=>{lifts=l},setExpanded:(id)=>{expandedWorkoutId=id},' +
+      'renderWorkouts,getWorkoutHTML:()=>document.getElementById("workoutBody").innerHTML,' +
       'addEntry:(rec)=>{entries=[...entries,rec];save(KEY,entries)}};',
     ctx,
   );
@@ -139,7 +141,22 @@ test('index.html si avvia e marca le modifiche come da sincronizzare', () => {
   assert.ok(app.getFoods().some((f) => f.id === 'f1'), 'il client deve applicare il delta del server');
 
   const backup = app.backupData();
-  assert.equal(backup.version, 4);
+  assert.equal(backup.version, 5);
   assert.ok(backup.meta, 'il backup deve includere i metadati di merge');
   assert.equal(backup.entries.length, 1);
+
+  // A logged set renders the best-1RM pill on the exercise and, when expanded,
+  // the editor with the rep-max chips.
+  app.setWorkouts([{id: 'w1', session: 'Giorno 1', name: 'Panca', sets: '3', type: 'compound', rest: "2'", notes: ''}]);
+  app.setLifts([{id: 'l1', workoutId: 'w1', name: 'Panca', session: 'Giorno 1', date: '2026-01-02', weight: 80, reps: 5}]);
+  app.renderWorkouts();
+  let rendered = app.getWorkoutHTML();
+  assert.ok(rendered.includes('pr-pill'), 'the best-1RM pill must render');
+  assert.ok(rendered.includes('data-wlog="w1"'), 'the log button must render');
+
+  app.setExpanded('w1');
+  app.renderWorkouts();
+  rendered = app.getWorkoutHTML();
+  assert.ok(rendered.includes('data-liftadd="w1"'), 'the set editor must render when expanded');
+  assert.ok(rendered.includes('5RM'), 'the rep-max chip must render');
 });

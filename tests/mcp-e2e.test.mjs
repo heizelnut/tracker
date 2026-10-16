@@ -60,7 +60,7 @@ async function withServer(t) {
 function device(entries) {
   const meta = core.emptyMeta();
   for (const e of entries) meta.updated.entries[e.date] = Date.parse(e.date);
-  return {entries, foods: [], diary: {}, workouts: [], done: {}, meta};
+  return {entries, foods: [], diary: {}, workouts: [], lifts: [], done: {}, meta};
 }
 
 function remoteState(p) {
@@ -69,6 +69,7 @@ function remoteState(p) {
     foods: Array.isArray(p && p.foods) ? p.foods : [],
     diary: p && p.diary && typeof p.diary === 'object' ? p.diary : {},
     workouts: Array.isArray(p && p.workouts) ? p.workouts : [],
+    lifts: Array.isArray(p && p.lifts) ? p.lifts : [],
     done: p && p.done && typeof p.done === 'object' ? p.done : {},
     meta: core.normalizeMeta(p && p.meta),
   };
@@ -186,4 +187,27 @@ test('le voci di diario aggiunte via MCP arrivano al dispositivo', async (t) => 
   await mcpCall(base, 'remove_diary_item', {date: '2026-04-10', item: 'Pollo MCP'});
   const afterRemove = await syncDevice(base, 'default', again.state);
   assert.equal(afterRemove.state.diary['2026-04-10'].items.length, 0);
+});
+
+test('un set registrato via MCP arriva al dispositivo (rep max)', async (t) => {
+  const base = await withServer(t);
+
+  let phone = device([{date: '2026-05-01', weight: 70}]);
+  phone = (await syncDevice(base, 'default', phone)).state;
+
+  await mcpCall(base, 'add_workout', {session: 'Giorno 1', name: 'Panca MCP', sets: '3', type: 'compound'});
+  const added = await mcpCall(base, 'add_lift', {exercise: 'Panca MCP', weight: 80, reps: 5, date: '2026-05-01'});
+  assert.equal(added.lift.name, 'Panca MCP', 'l\'esercizio deve essere risolto dalla scheda');
+  assert.equal(added.estimated1RM, 93.3);
+
+  const synced = await syncDevice(base, 'default', phone);
+  assert.equal(synced.localChanged, true, 'il dispositivo deve accorgersi del set');
+  const got = synced.state.lifts.find((l) => l.id === added.lift.id);
+  assert.ok(got, 'manca il set sul dispositivo');
+  assert.equal(got.weight, 80);
+  assert.equal(got.reps, 5);
+
+  const list = await mcpCall(base, 'list_lifts', {query: 'panca'});
+  assert.equal(list.count, 1);
+  assert.equal(list.repMaxes[0].maxByReps['5'], 80);
 });

@@ -42,7 +42,7 @@ async function waitHealth(base) {
 function device(entries) {
   const meta = core.emptyMeta();
   for (const e of entries) meta.updated.entries[e.date] = Date.parse(e.date);
-  return {entries, foods: [], diary: {}, workouts: [], done: {}, meta};
+  return {entries, foods: [], diary: {}, workouts: [], lifts: [], done: {}, meta};
 }
 
 // Come il client: normalizza il payload remoto (retro-compatibile).
@@ -52,6 +52,7 @@ function remoteState(p) {
     foods: Array.isArray(p && p.foods) ? p.foods : [],
     diary: p && p.diary && typeof p.diary === 'object' ? p.diary : {},
     workouts: Array.isArray(p && p.workouts) ? p.workouts : [],
+    lifts: Array.isArray(p && p.lifts) ? p.lifts : [],
     done: p && p.done && typeof p.done === 'object' ? p.done : {},
     meta: core.normalizeMeta(p && p.meta),
   };
