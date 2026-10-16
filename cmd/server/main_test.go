@@ -19,6 +19,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("GET /api/kv/{key}", s.get)
 	mux.HandleFunc("PUT /api/kv/{key}", s.put)
 	mux.HandleFunc("DELETE /api/kv/{key}", s.del)
+	mux.HandleFunc("/mcp", s.mcpRoute)
 	srv := httptest.NewServer(withCORS(mux))
 	t.Cleanup(srv.Close)
 	return srv

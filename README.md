@@ -11,7 +11,7 @@ riducendo gradualmente il grasso, con un deficit calorico moderato.
 | File | Descrizione |
 |---|---|
 | [`index.html`](./index.html) | App web (single file) per tracciare peso, calorie e macro. Salva tutto in **LocalStorage**. |
-| [`cmd/server`](./cmd/server) | Backend minimale (Go, stdlib) che serve l'app e sincronizza un blob opaco per chiave. |
+| [`cmd/server`](./cmd/server) | Backend minimale (Go, stdlib) che serve l'app, sincronizza un blob opaco per chiave ed espone un server **MCP** per gli agenti. |
 | [`Dockerfile`](./Dockerfile) · [`docker-compose.yml`](./docker-compose.yml) | Self-hosting in un container. |
 | [`data/cibi.csv`](./data/cibi.csv) | Database alimenti d'esempio, esportato dal foglio **“Cibo”** di `~/Documents/dieta/macros.xlsx`. |
 | [`data/allenamenti.csv`](./data/allenamenti.csv) | Scheda allenamento 3 giorni d'esempio (dalla conversazione originale). |
@@ -155,7 +155,8 @@ Ogni riga mostra lo score e i grammi apportati per ciascun macro, più un pulsan
 Il repo include un backend **volutamente stupido**: serve l'app e salva un
 **blob opaco** per chiave su disco. Niente database, niente schema, niente
 autenticazione — è pensato per girare in **LAN / dietro Tailscale**, non esposto
-su internet. Non conosce peso, pasti o macro: fa solo `GET`/`PUT` di byte.
+su internet. Il blob resta opaco: l'unica eccezione è il server **MCP**, che sa
+leggere e scrivere alimenti e allenamenti su richiesta di un agente.
 
 ### Avvio rapido
 
@@ -172,6 +173,7 @@ docker compose up --build
 | `GET` | `/api/kv/{key}` | Legge il blob (header `X-Updated-At` col timestamp) |
 | `PUT` | `/api/kv/{key}` | Scrive il blob (max 8 MiB, anche gzip) |
 | `DELETE` | `/api/kv/{key}` | Elimina il blob |
+| `POST` | `/mcp` | Server MCP (Streamable HTTP, JSON-RPC 2.0) per gli agenti |
 | `GET` | `/healthz` | Healthcheck |
 | `*` | `/` | Serve l'app statica (`index.html`) |
 
@@ -223,6 +225,46 @@ L'invio è automatico e resiliente:
 
 Il server resta un **blob store opaco**: non conosce lo schema, è l'app a
 eseguire il merge.
+
+### MCP (per gli agenti)
+
+Lo stesso processo espone un server **MCP** (Model Context Protocol, Streamable
+HTTP) su `POST /mcp`, così un agente può **ispezionare e ampliare** il database
+alimenti e il programma allenamenti. Niente secondo processo né dipendenze: è
+JSON-RPC 2.0 scritto con la sola stdlib.
+
+| Tool | Cosa fa |
+|---|---|
+| `tracker_summary` | Conteggi, sessioni, categorie, ultime registrazioni, target |
+| `list_foods` | Elenca e cerca i cibi (per nome e categoria) |
+| `add_food` | Aggiunge o aggiorna un alimento (upsert per nome) |
+| `list_workouts` | Elenca gli esercizi (filtro per sessione/nome) |
+| `add_workout` | Aggiunge o aggiorna un esercizio (upsert per sessione+nome) |
+
+Le scritture usano lo **stesso merge per record** dell'app: il server legge il
+blob, aggiorna il timestamp in `meta.updated` e riscrive solo la collezione
+toccata — `entries`, `diary` e `done` passano intatti. Al sync successivo il
+dispositivo vede il nuovo cibo/esercizio come modifica più recente e lo unisce,
+senza perdere le proprie.
+
+Configurazione in un client MCP (esempio con [pi](https://pi.dev)):
+
+```json
+{
+  "mcpServers": {
+    "tracker": { "url": "http://tracker.lab.heiz.cc/mcp" }
+  }
+}
+```
+
+Da riga di comando:
+
+```bash
+pi mcp add tracker --url http://localhost:8080/mcp
+```
+
+Ogni tool accetta un parametro opzionale `key` per scegliere il blob di sync
+(default `default`).
 
 ### Sviluppo
 

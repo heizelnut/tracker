@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -44,6 +45,11 @@ var keyRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 type server struct {
 	dataDir string
+
+	// mu serialises blob writes (PUT, DELETE and the MCP mutation tools) so two
+	// writers cannot interleave a read-modify-write and silently drop a record.
+	// The browser still does its own per-record merge on sync.
+	mu sync.Mutex
 }
 
 func main() {
@@ -64,6 +70,8 @@ func main() {
 	mux.HandleFunc("GET /api/kv/{key}", s.get)
 	mux.HandleFunc("PUT /api/kv/{key}", s.put)
 	mux.HandleFunc("DELETE /api/kv/{key}", s.del)
+	// MCP (Streamable HTTP) so agents can inspect and extend the tracker.
+	mux.HandleFunc("/mcp", s.mcpRoute)
 	// Everything else is the single-file app (index.html is served for "/").
 	mux.Handle("/", http.FileServer(http.Dir(staticDir)))
 
@@ -152,6 +160,8 @@ func (s *server) put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad key", http.StatusBadRequest)
 		return
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBlobBytes+1))
 	if err != nil {
 		http.Error(w, "cannot read body", http.StatusBadRequest)
@@ -185,6 +195,8 @@ func (s *server) del(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad key", http.StatusBadRequest)
 		return
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := os.Remove(s.path(key)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -277,8 +289,8 @@ func acceptsGzip(r *http.Request) bool {
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Encoding")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Encoding, Accept, MCP-Protocol-Version, Mcp-Session-Id, Last-Event-ID")
 		// autoSync reads X-Updated-At to pick last-write-wins; without this the
 		// file:// copy cannot see the header and would push every time.
 		w.Header().Set("Access-Control-Expose-Headers", "X-Updated-At")
