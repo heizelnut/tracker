@@ -50,6 +50,7 @@ L'interfaccia è divisa in **tab**:
 - **Allenamenti** — programma diviso per sessioni, aggiungi/modifica manualmente o importa da CSV.
 - **Cibi** — database alimenti: aggiungi/modifica manualmente, import/export CSV, ricerca e filtro per categoria.
 - **Storico** — tutte le registrazioni con peso, kcal, macro e tipo giornata.
+- **Impostazioni** — backup (esporta/importa/cancella) e sincronizzazione.
 
 In dettaglio:
 
@@ -215,9 +216,10 @@ SQLite.
 
 ### Sync nell'app
 
-In fondo all'app c'è la card **“Sincronizzazione tra dispositivi”**: imposta
-l'URL del server (vuoto = stesso server che serve l'app), una **chiave**
-(default `default`) e attiva **Auto-sync**.
+La sincronizzazione è **attiva di default** (stesso server che serve l'app, chiave
+`default`): non serve configurarla. Il pannello **Impostazioni** mostra lo stato,
+permette di forzare **Sincronizza ora** / **Invia al server** / **Ricarica dal
+server** e, se serve, di puntare a un altro server o a un'altra chiave.
 
 La sincronizzazione è **per record**, non a blob intero:
 
