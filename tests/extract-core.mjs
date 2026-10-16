@@ -22,8 +22,8 @@ export function loadCore() {
     code +
       '\n;globalThis.__syncCore={' +
       'SYNC_COLLECTIONS,emptyMeta,normalizeMeta,syncItems,syncBuildValue,' +
-      'syncStable,syncRecordEqual,syncInferTs,syncStampChanges,syncBetter,' +
-      'syncMerge,syncGc};',
+      'syncStable,syncRecordEqual,syncInferTs,syncStampChanges,syncChangedKeys,syncBetter,' +
+      'syncMerge,syncGc,syncDeltaState};',
     ctx,
   );
   return ctx.__syncCore;

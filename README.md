@@ -223,8 +223,11 @@ La sincronizzazione è **per record**, non a blob intero:
 
 - ogni record (peso/calorie per data, giornata di diario, alimento o esercizio
   per id, singola spunta di allenamento) porta un timestamp di ultima modifica;
-- al sync l'app scarica il blob, **unisce** locale e remoto record per record
-  (vince la modifica più recente) e rispedisce solo se serve;
+- al sync l'app chiede solo le modifiche più recenti del suo ultimo pull
+  (`GET /api/sync/{key}?since=…`) e invia solo i record in attesa in una coda
+  locale (*outbox*): niente più blob interi da riscrivere;
+- gli aggiornamenti degli altri dispositivi arrivano anche **in tempo reale**
+  via SSE (`GET /api/events/{key}`), senza aspettare il prossimo sync;
 - un dispositivo rimasto indietro **non può più cancellare** le giornate
   registrate su un altro dispositivo: le unisce;
 - le eliminazioni viaggiano come *tombstone*, così non vengono resuscitate da
@@ -240,9 +243,10 @@ L'invio è automatico e resiliente:
 - la card mostra quante **modifiche restano da inviare** e l'esito dell'ultimo
   tentativo.
 
-> Nota: finché il client non passa alla fase successiva, l'app continua a usare
-> l'API a blob (`/api/kv`), che ora è una **vista su SQLite**. La logica di merge
-> per record resta identica; cambierà solo il trasporto (delta + SSE).
+La logica di merge per record resta la stessa di sempre (è estratta in
+`SYNC-CORE` e coperta dai test): cambia solo il trasporto, da blob intero a delta
+incrementali + SSE. I dati restano anche in **LocalStorage**, che fa da cache
+locale sul dispositivo.
 
 ### MCP (per gli agenti)
 

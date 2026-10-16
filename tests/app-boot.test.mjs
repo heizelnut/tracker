@@ -110,8 +110,8 @@ test('index.html si avvia e marca le modifiche come da sincronizzare', () => {
   // Espone gli interni per poter simulare un salvataggio dopo l'avvio.
   vm.runInContext(
     script +
-      '\n;globalThis.__app={save,backupData,pendingCount,KEY,' +
-      'getEntries:()=>entries,getMeta:()=>meta,' +
+      '\n;globalThis.__app={save,backupData,pendingCount,applyDelta,outboxRecords,KEY,' +
+      'getEntries:()=>entries,getFoods:()=>foods,getMeta:()=>meta,' +
       'addEntry:(rec)=>{entries=[...entries,rec];save(KEY,entries)}};',
     ctx,
   );
@@ -124,6 +124,19 @@ test('index.html si avvia e marca le modifiche come da sincronizzare', () => {
   const meta = app.getMeta();
   assert.ok(meta.updated.entries['2026-01-01'], 'il record salvato deve avere un timestamp');
   assert.ok(app.pendingCount() >= 1, 'il record salvato deve risultare in attesa di invio');
+
+  // L'outbox contiene il record da inviare, con i suoi dati.
+  const out = app.outboxRecords();
+  assert.equal(out.recs.length, 1);
+  assert.equal(out.recs[0].collection, 'entries');
+  assert.equal(out.recs[0].data.date, '2026-01-01');
+  assert.equal(out.recs[0].updated, meta.updated.entries['2026-01-01']);
+
+  // Un delta del server viene applicato al dispositivo.
+  app.applyDelta({records: [
+    {collection: 'foods', id: 'f1', data: {id: 'f1', name: 'Pollo', p: 23}, updated: 9_000_000_000_000},
+  ]});
+  assert.ok(app.getFoods().some((f) => f.id === 'f1'), 'il client deve applicare il delta del server');
 
   const backup = app.backupData();
   assert.equal(backup.version, 4);

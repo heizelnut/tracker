@@ -9,7 +9,7 @@ import assert from 'node:assert';
 import {loadCore} from './extract-core.mjs';
 
 const core = loadCore();
-const {syncMerge, emptyMeta, syncStampChanges, SYNC_COLLECTIONS} = core;
+const {syncMerge, emptyMeta, syncStampChanges, syncChangedKeys, syncDeltaState, SYNC_COLLECTIONS} = core;
 
 // Costruisce uno "stato dispositivo" come lo vede il client.
 function state(init = {}) {
@@ -159,4 +159,37 @@ test('il merge converge: riapplicarlo non cambia più lo stato locale', () => {
 
   assert.deepEqual(again.state.entries, first.entries);
   assert.equal(again.localChanged, false);
+});
+
+test('syncChangedKeys riporta nuovi, modificati e rimossi', () => {
+  const col = SYNC_COLLECTIONS.find((c) => c.name === 'entries');
+  const prev = [{date: '2026-01-01', weight: 70}, {date: '2026-01-02', weight: 71}];
+  const next = [{date: '2026-01-01', weight: 70}, {date: '2026-01-03', weight: 72}];
+
+  assert.deepEqual(syncChangedKeys(col, prev, next).sort(), ['2026-01-02', '2026-01-03']);
+});
+
+test('un delta server si applica con lo stesso merge', () => {
+  const local = state({entries: [{date: '2026-01-01', weight: 70}], updated: {entries: {'2026-01-01': 100}}});
+  const delta = {records: [
+    {collection: 'entries', id: '2026-01-01', data: {date: '2026-01-01', weight: 71}, updated: 200},
+    {collection: 'foods', id: 'f1', data: {id: 'f1', name: 'Pollo'}, updated: 200},
+    {collection: 'foods', id: 'gone', deleted: true, updated: 200},
+  ]};
+
+  const {state: merged, localChanged} = syncMerge(local, syncDeltaState(delta));
+
+  assert.equal(localChanged, true);
+  assert.equal(merged.entries[0].weight, 71, 'il record più recente del server vince');
+  assert.ok(merged.foods.some((f) => f.id === 'f1'), 'il nuovo record arriva');
+  assert.equal(merged.meta.tombstones.foods.gone, 200, 'la tombstone arriva');
+});
+
+test('un delta server non tocca i record locali che non contiene', () => {
+  const local = state({entries: [{date: '2026-01-01', weight: 70}], updated: {entries: {'2026-01-01': 100}}});
+  const remote = syncDeltaState({records: [{collection: 'foods', id: 'f1', data: {id: 'f1', name: 'Pollo'}, updated: 200}]});
+
+  const {state: merged} = syncMerge(local, remote);
+
+  assert.equal(merged.entries.length, 1, 'il record locale resta');
 });
