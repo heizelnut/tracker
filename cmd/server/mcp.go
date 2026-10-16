@@ -985,41 +985,94 @@ func (s *server) readPlain(key string) ([]byte, error) {
 	return data, nil
 }
 
-// loadState decodes the blob into its top-level fields. Only the fields the MCP
-// tools touch are interpreted; everything else stays as raw JSON and is written
-// back byte-for-byte.
+// loadState materialises the blob-shaped state from the record store, so the
+// MCP tools keep speaking the same collections as the browser.
 func (s *server) loadState(key string) (map[string]json.RawMessage, error) {
-	raw, err := s.readPlain(key)
+	if err := s.ensureImported(key); err != nil {
+		return nil, err
+	}
+	recs, err := s.store.all(key)
 	if err != nil {
 		return nil, err
 	}
-	state := map[string]json.RawMessage{}
-	if len(strings.TrimSpace(string(raw))) == 0 {
-		return state, nil
-	}
-	if err := json.Unmarshal(raw, &state); err != nil {
-		return nil, fmt.Errorf("blob %q is not a JSON object: %w", key, err)
-	}
-	return state, nil
+	return stateFromRecords(recs)
 }
 
-// mutateState serialises read-modify-write across all writers in this process,
-// then stores the result with the same atomic temp+rename as a PUT.
+// mutateState applies fn to the materialised state and persists only the records
+// it changed, with the same last-write-wins rule as a client push. The changes
+// are broadcast to SSE subscribers so other clients update in real time.
 func (s *server) mutateState(key string, fn func(map[string]json.RawMessage) error) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	state, err := s.loadState(key)
+	if err := s.ensureImported(key); err != nil {
+		return err
+	}
+	before, err := s.store.all(key)
+	if err != nil {
+		return err
+	}
+	state, err := stateFromRecords(before)
 	if err != nil {
 		return err
 	}
 	if err := fn(state); err != nil {
 		return err
 	}
-	out, err := json.Marshal(state)
+	after, err := recordsFromState(state)
 	if err != nil {
 		return err
 	}
-	return s.write(key, out)
+	return s.persistDiff(key, before, after)
+}
+
+// persistDiff upserts the records that differ from what is stored (and tombstones
+// any record that disappeared), then publishes them.
+func (s *server) persistDiff(key string, before, after []record) error {
+	prev := recordsByKey(before)
+	next := recordsByKey(after)
+	var changed []record
+	for k, rec := range next {
+		if old, ok := prev[k]; ok && recordsEqual(old, rec) {
+			continue
+		}
+		changed = append(changed, rec)
+	}
+	now := time.Now().UnixMilli()
+	for k, old := range prev {
+		if old.Deleted {
+			continue
+		}
+		if _, ok := next[k]; !ok {
+			changed = append(changed, record{Collection: old.Collection, ID: old.ID, Updated: now, Deleted: true})
+		}
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	applied, err := s.store.upsert(key, changed)
+	if err != nil {
+		return err
+	}
+	s.broadcast(key, applied)
+	return nil
+}
+
+func recordsByKey(recs []record) map[string]record {
+	m := make(map[string]record, len(recs))
+	for _, r := range recs {
+		m[r.Collection+"\x00"+r.ID] = r
+	}
+	return m
+}
+
+// recordsEqual ignores the payload of tombstones: a deleted row's data is not
+// meaningful, only its timestamp and deleted flag are.
+func recordsEqual(a, b record) bool {
+	if a.Updated != b.Updated || a.Deleted != b.Deleted {
+		return false
+	}
+	if a.Deleted {
+		return true
+	}
+	return string(a.Data) == string(b.Data)
 }
 
 // stampMeta marks a record as just-modified in the app's per-record metadata,

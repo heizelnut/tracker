@@ -2,16 +2,25 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	s := &server{dataDir: t.TempDir()}
+	dir := t.TempDir()
+	st, err := openStore(filepath.Join(dir, "tracker.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	s := &server{dataDir: dir, store: st, hub: newHub()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "ok")
@@ -19,6 +28,9 @@ func newTestServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("GET /api/kv/{key}", s.get)
 	mux.HandleFunc("PUT /api/kv/{key}", s.put)
 	mux.HandleFunc("DELETE /api/kv/{key}", s.del)
+	mux.HandleFunc("GET /api/sync/{key}", s.syncPull)
+	mux.HandleFunc("POST /api/sync/{key}", s.syncPush)
+	mux.HandleFunc("GET /api/events/{key}", s.events)
 	mux.HandleFunc("/mcp", s.mcpRoute)
 	srv := httptest.NewServer(withCORS(mux))
 	t.Cleanup(srv.Close)
@@ -65,12 +77,36 @@ func TestPutGetRoundTrip(t *testing.T) {
 	if resp2.StatusCode != http.StatusOK {
 		t.Fatalf("get status = %d, want 200", resp2.StatusCode)
 	}
-	if got != blob {
-		t.Fatalf("blob = %s, want %s", got, blob)
-	}
 	if resp2.Header.Get("X-Updated-At") == "" {
 		t.Fatal("missing X-Updated-At header")
 	}
+	// The blob is materialised from the store, not echoed byte-for-byte.
+	var state map[string]any
+	if err := json.Unmarshal([]byte(got), &state); err != nil {
+		t.Fatalf("body is not JSON: %v", err)
+	}
+	entries, ok := state["entries"].([]any)
+	if !ok || len(entries) != 1 {
+		t.Fatalf("entries = %v", state["entries"])
+	}
+	if entries[0].(map[string]any)["weight"].(float64) != 72.5 {
+		t.Fatalf("weight = %v", entries[0])
+	}
+}
+
+// entryBlob builds a valid, compressible blob with n distinct weight entries.
+func entryBlob(n int) string {
+	entries := make([]map[string]any, 0, n)
+	for i := 0; i < n; i++ {
+		entries = append(entries, map[string]any{
+			"date":     fmt.Sprintf("2026-%02d-%02d", i/28+1, i%28+1),
+			"weight":   70 + float64(i)/10,
+			"calories": 1800,
+			"type":     "training",
+			"note":     strings.Repeat("allenamento ", 6),
+		})
+	}
+	return string(mustRaw(map[string]any{"entries": entries}))
 }
 
 func TestGetMissing(t *testing.T) {
@@ -171,7 +207,7 @@ func TestAcceptsGzip(t *testing.T) {
 
 func TestGetCompressesPlainBlob(t *testing.T) {
 	srv := newTestServer(t)
-	blob := strings.Repeat(`{"date":"2026-01-10","note":"allenamento"},`, 200)
+	blob := entryBlob(120)
 	doWith(t, http.DefaultClient, http.MethodPut, srv.URL+"/api/kv/default", []byte(blob), nil)
 
 	resp, body := doWith(t, rawClient(), http.MethodGet, srv.URL+"/api/kv/default", nil,
@@ -185,35 +221,43 @@ func TestGetCompressesPlainBlob(t *testing.T) {
 	if !isGzip(body) {
 		t.Fatal("body is not gzip on the wire")
 	}
-	if len(body) >= len(blob) {
-		t.Fatalf("gzip did not shrink: %d >= %d", len(body), len(blob))
-	}
 	plain, err := gunzipLimit(body, maxBlobBytes)
 	if err != nil {
 		t.Fatalf("gunzip: %v", err)
 	}
-	if string(plain) != blob {
-		t.Fatal("round-tripped blob differs from what was stored")
+	if len(body) >= len(plain) {
+		t.Fatalf("gzip did not shrink: %d >= %d", len(body), len(plain))
+	}
+	var state map[string]any
+	if err := json.Unmarshal(plain, &state); err != nil {
+		t.Fatalf("gunzipped body is not JSON: %v", err)
+	}
+	if got := len(state["entries"].([]any)); got != 120 {
+		t.Fatalf("entries = %d, want 120", got)
 	}
 }
 
 func TestGetPlainWhenGzipNotAccepted(t *testing.T) {
 	srv := newTestServer(t)
-	blob := strings.Repeat(`{"date":"2026-01-10"},`, 200)
+	blob := entryBlob(120)
 	doWith(t, http.DefaultClient, http.MethodPut, srv.URL+"/api/kv/default", []byte(blob), nil)
 
 	resp, body := doWith(t, rawClient(), http.MethodGet, srv.URL+"/api/kv/default", nil, nil)
 	if got := resp.Header.Get("Content-Encoding"); got != "" {
 		t.Fatalf("Content-Encoding = %q, want empty", got)
 	}
-	if string(body) != blob {
-		t.Fatalf("body = %d bytes, want %d plain", len(body), len(blob))
+	var state map[string]any
+	if err := json.Unmarshal(body, &state); err != nil {
+		t.Fatalf("body is not JSON: %v", err)
+	}
+	if got := len(state["entries"].([]any)); got != 120 {
+		t.Fatalf("entries = %d, want 120", got)
 	}
 }
 
 func TestGetSkipsTinyBlob(t *testing.T) {
 	srv := newTestServer(t)
-	blob := `{"a":1}`
+	blob := `{"entries":[{"date":"2026-01-10","weight":70}]}`
 	doWith(t, http.DefaultClient, http.MethodPut, srv.URL+"/api/kv/small", []byte(blob), nil)
 
 	resp, body := doWith(t, rawClient(), http.MethodGet, srv.URL+"/api/kv/small", nil,
@@ -221,14 +265,14 @@ func TestGetSkipsTinyBlob(t *testing.T) {
 	if got := resp.Header.Get("Content-Encoding"); got != "" {
 		t.Fatalf("Content-Encoding = %q, want empty for a tiny blob", got)
 	}
-	if string(body) != blob {
-		t.Fatalf("body = %q, want %q", body, blob)
+	if !strings.Contains(string(body), "2026-01-10") {
+		t.Fatalf("body = %s", body)
 	}
 }
 
-func TestGzippedUploadStoredOpaqueAndServed(t *testing.T) {
+func TestGzippedUploadImportedAndServed(t *testing.T) {
 	srv := newTestServer(t)
-	blob := strings.Repeat(`{"name":"Alimento","p":12.3},`, 300)
+	blob := entryBlob(120)
 	gz, err := gzipBytes([]byte(blob))
 	if err != nil {
 		t.Fatalf("gzipBytes: %v", err)
@@ -240,23 +284,22 @@ func TestGzippedUploadStoredOpaqueAndServed(t *testing.T) {
 		t.Fatalf("put status = %d, want 204", resp.StatusCode)
 	}
 
-	// A gzip-capable client gets the stored bytes back untouched.
+	// A gzip-capable client gets a compressed, fully populated blob.
 	resp2, body2 := doWith(t, rawClient(), http.MethodGet, srv.URL+"/api/kv/gz", nil,
 		map[string]string{"Accept-Encoding": "gzip"})
 	if resp2.Header.Get("Content-Encoding") != "gzip" {
 		t.Fatalf("Content-Encoding = %q, want gzip", resp2.Header.Get("Content-Encoding"))
 	}
-	if !bytes.Equal(body2, gz) {
-		t.Fatal("stored blob was re-encoded instead of passed through")
+	plain, err := gunzipLimit(body2, maxBlobBytes)
+	if err != nil {
+		t.Fatalf("gunzip: %v", err)
 	}
-
-	// A client that cannot decode gzip still gets plain JSON.
-	resp3, body3 := doWith(t, rawClient(), http.MethodGet, srv.URL+"/api/kv/gz", nil, nil)
-	if got := resp3.Header.Get("Content-Encoding"); got != "" {
-		t.Fatalf("Content-Encoding = %q, want empty", got)
+	var state map[string]any
+	if err := json.Unmarshal(plain, &state); err != nil {
+		t.Fatalf("body is not JSON: %v", err)
 	}
-	if string(body3) != blob {
-		t.Fatal("plain client did not receive the decompressed blob")
+	if got := len(state["entries"].([]any)); got != 120 {
+		t.Fatalf("entries = %d, want 120", got)
 	}
 }
 
@@ -272,9 +315,9 @@ func TestPutRejectsFakeGzip(t *testing.T) {
 
 func TestPutIgnoresMisleadingContentEncoding(t *testing.T) {
 	// A proxy that decompressed the body in flight leaves a lying header; the
-	// bytes win, so the blob is stored plain and served plain.
+	// bytes win, so the plain JSON is imported all the same.
 	srv := newTestServer(t)
-	blob := `{"entries":[]}`
+	blob := `{"entries":[{"date":"2026-01-10","weight":70}]}`
 	resp, _ := doWith(t, http.DefaultClient, http.MethodPut, srv.URL+"/api/kv/lie", []byte(blob),
 		map[string]string{"Content-Encoding": "gzip"})
 	if resp.StatusCode != http.StatusNoContent {
@@ -284,8 +327,12 @@ func TestPutIgnoresMisleadingContentEncoding(t *testing.T) {
 	if got := resp2.Header.Get("Content-Encoding"); got != "" {
 		t.Fatalf("Content-Encoding = %q, want empty", got)
 	}
-	if string(body) != blob {
-		t.Fatalf("body = %q, want %q", body, blob)
+	var state map[string]any
+	if err := json.Unmarshal(body, &state); err != nil {
+		t.Fatalf("body is not JSON: %v", err)
+	}
+	if got := len(state["entries"].([]any)); got != 1 {
+		t.Fatalf("entries = %d, want 1", got)
 	}
 }
 

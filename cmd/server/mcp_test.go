@@ -170,11 +170,11 @@ func TestMCPAddFoodPreservesOtherCollections(t *testing.T) {
 	if len(blob["entries"].([]any)) != 1 {
 		t.Fatalf("entries were lost: %v", blob["entries"])
 	}
-	if blob["app"] != "ricomposizione-tracker" || blob["version"].(float64) != 4 {
-		t.Fatalf("top-level fields were lost: %v", blob)
-	}
 	if _, ok := blob["diary"].(map[string]any)["2026-01-10"]; !ok {
 		t.Fatal("diary was lost")
+	}
+	if done, ok := blob["done"].(map[string]any)["2026-01-10"].(map[string]any); !ok || done["x"] != true {
+		t.Fatalf("done was lost: %v", blob["done"])
 	}
 	foods := blob["foods"].([]any)
 	if len(foods) != 1 {

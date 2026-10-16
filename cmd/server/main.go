@@ -1,13 +1,14 @@
-// Command server is the tracker's self-hosted sync backend.
+// Command server is the tracker's self-hosted backend.
 //
-// It is deliberately dumb. It serves the single-file app and stores opaque
-// blobs on disk under /api/kv/<key>. No database, no schema, no auth, no
-// knowledge of what the app stores — just "give me the bytes for this key"
-// and "save these bytes under this key". The browser decides what to sync.
+// It serves the single-file app and stores the tracker's records in SQLite
+// (one row per record, synced incrementally under /api/sync/<key>), so a sync
+// only moves what changed and other clients can be pushed the change over SSE
+// at /api/events/<key>.
 //
-// Blobs may be gzip-compressed in transit and at rest. That is still not
-// schema knowledge: the server only sniffs the gzip magic number to decide
-// whether a response needs Content-Encoding, and never parses the payload.
+// For older clients it also keeps the opaque-blob API at /api/kv/<key>: a GET
+// materialises the blob from the records, a PUT imports it back per record.
+// That is the migration path — no client change is needed to move the data
+// into SQLite. An MCP server at /mcp exposes the same records to agents.
 //
 // Security is the network boundary: it is meant to run on a LAN / Tailscale,
 // not exposed to the internet.
@@ -16,6 +17,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
@@ -25,7 +27,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -45,11 +46,8 @@ var keyRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 type server struct {
 	dataDir string
-
-	// mu serialises blob writes (PUT, DELETE and the MCP mutation tools) so two
-	// writers cannot interleave a read-modify-write and silently drop a record.
-	// The browser still does its own per-record merge on sync.
-	mu sync.Mutex
+	store   *store
+	hub     *hub
 }
 
 func main() {
@@ -62,6 +60,13 @@ func main() {
 	}
 
 	s := &server{dataDir: dataDir}
+	st, err := openStore(filepath.Join(dataDir, "tracker.db"))
+	if err != nil {
+		log.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	s.store = st
+	s.hub = newHub()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -70,6 +75,10 @@ func main() {
 	mux.HandleFunc("GET /api/kv/{key}", s.get)
 	mux.HandleFunc("PUT /api/kv/{key}", s.put)
 	mux.HandleFunc("DELETE /api/kv/{key}", s.del)
+	// Incremental record sync + realtime push.
+	mux.HandleFunc("GET /api/sync/{key}", s.syncPull)
+	mux.HandleFunc("POST /api/sync/{key}", s.syncPush)
+	mux.HandleFunc("GET /api/events/{key}", s.events)
 	// MCP (Streamable HTTP) so agents can inspect and extend the tracker.
 	mux.HandleFunc("/mcp", s.mcpRoute)
 	// Everything else is the single-file app (index.html is served for "/").
@@ -95,50 +104,44 @@ func (s *server) get(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad key", http.StatusBadRequest)
 		return
 	}
-	data, err := os.ReadFile(s.path(key))
-	if errors.Is(err, os.ErrNotExist) {
-		http.Error(w, "not found", http.StatusNotFound)
+	if err := s.ensureImported(key); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	recs, err := s.store.all(key)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if info, err := os.Stat(s.path(key)); err == nil {
-		w.Header().Set("X-Updated-At", info.ModTime().UTC().Format(time.RFC3339Nano))
+	// An empty key is "no data yet": old clients treat 404 as "push mine".
+	if len(recs) == 0 {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	state, err := stateFromRecords(recs)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if updated, err := s.store.maxUpdated(key); err == nil && updated > 0 {
+		w.Header().Set("X-Updated-At", time.UnixMilli(updated).UTC().Format(time.RFC3339Nano))
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Vary", "Accept-Encoding")
 
-	// The diary blob is ~320 KiB of highly repetitive JSON that gzips ~23x.
-	wantGzip := acceptsGzip(r)
-	storedGzip := isGzip(data)
-
-	switch {
-	case storedGzip && wantGzip:
-		// Compressed at rest and the client can decode it: pass through
-		// untouched, no CPU spent.
-		serveBody(w, r, data, "gzip")
-	case storedGzip:
-		// Client cannot decode gzip (curl, old client): decompress on the way
-		// out so the bytes are always plain JSON for whoever asks.
-		plain, err := gunzipLimit(data, maxBlobBytes)
-		if err != nil {
-			http.Error(w, "corrupt blob", http.StatusInternalServerError)
+	// The blob is built on the fly (plain); compress it for clients that ask.
+	if acceptsGzip(r) && len(data) >= minGzipBytes {
+		if gz, err := gzipBytes(data); err == nil {
+			serveBody(w, r, gz, "gzip")
 			return
 		}
-		serveBody(w, r, plain, "")
-	case wantGzip && len(data) >= minGzipBytes:
-		// Stored plain (written by an older client): compress now.
-		gz, err := gzipBytes(data)
-		if err != nil {
-			serveBody(w, r, data, "")
-			return
-		}
-		serveBody(w, r, gz, "gzip")
-	default:
-		serveBody(w, r, data, "")
 	}
+	serveBody(w, r, data, "")
 }
 
 // serveBody writes body with an explicit Content-Length. The encoding is passed
@@ -160,8 +163,6 @@ func (s *server) put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad key", http.StatusBadRequest)
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBlobBytes+1))
 	if err != nil {
 		http.Error(w, "cannot read body", http.StatusBadRequest)
@@ -171,21 +172,27 @@ func (s *server) put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "blob too large", http.StatusRequestEntityTooLarge)
 		return
 	}
-	// A gzipped upload is stored as-is: the bytes stay opaque, and get() sniffs
-	// the magic number to decide how to serve them. We only insist that it is
-	// real gzip and that it cannot inflate past the blob limit. Content-Encoding
-	// is deliberately ignored — the bytes themselves are the source of truth, so
-	// a proxy that transparently decompressed the request cannot corrupt us.
+	// Content-Encoding is deliberately ignored: the bytes are the source of
+	// truth, so a proxy that decompressed the request in flight cannot corrupt
+	// us.
+	plain := body
 	if isGzip(body) {
-		if _, err := gunzipLimit(body, maxBlobBytes); err != nil {
+		plain, err = gunzipLimit(body, maxBlobBytes)
+		if err != nil {
 			http.Error(w, "bad gzip body: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
-	if err := s.write(key, body); err != nil {
+	if err := s.importBlob(key, plain); err != nil {
+		http.Error(w, "bad blob: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.store.markImported(key); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Keep the legacy file as a rollback backup (best effort only).
+	_ = s.write(key, plain)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -195,13 +202,34 @@ func (s *server) del(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad key", http.StatusBadRequest)
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if err := s.store.deleteKey(key); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if err := os.Remove(s.path(key)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ensureImported migrates a legacy blob file into SQLite, exactly once per key.
+// A corrupt legacy file is logged and skipped rather than blocked forever.
+func (s *server) ensureImported(key string) error {
+	done, err := s.store.imported(key)
+	if err != nil || done {
+		return err
+	}
+	raw, err := s.readPlain(key)
+	if err != nil {
+		return err
+	}
+	if len(raw) > 0 {
+		if err := s.importBlob(key, raw); err != nil {
+			log.Printf("import legacy blob %q: %v", key, err)
+		}
+	}
+	return s.store.markImported(key)
 }
 
 // write stores body atomically (temp file + rename) so a reader never sees a

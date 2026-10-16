@@ -13,6 +13,7 @@ bin/
 
 # Go
 /tracker
+/server
 
 # Env e dati locali (il CSV di esempio resta versionato)
 .env

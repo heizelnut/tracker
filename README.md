@@ -11,7 +11,7 @@ riducendo gradualmente il grasso, con un deficit calorico moderato.
 | File | Descrizione |
 |---|---|
 | [`index.html`](./index.html) | App web (single file) per tracciare peso, calorie e macro. Salva tutto in **LocalStorage**. |
-| [`cmd/server`](./cmd/server) | Backend minimale (Go, stdlib) che serve l'app, sincronizza un blob opaco per chiave ed espone un server **MCP** per gli agenti. |
+| [`cmd/server`](./cmd/server) | Backend (Go + SQLite) che serve l'app, sincronizza i record in modo incrementale, espone un server **MCP** per gli agenti e mantiene la vecchia API a blob per la migrazione. |
 | [`Dockerfile`](./Dockerfile) · [`docker-compose.yml`](./docker-compose.yml) | Self-hosting in un container. |
 | [`data/cibi.csv`](./data/cibi.csv) | Database alimenti d'esempio, esportato dal foglio **“Cibo”** di `~/Documents/dieta/macros.xlsx`. |
 | [`data/allenamenti.csv`](./data/allenamenti.csv) | Scheda allenamento 3 giorni d'esempio (dalla conversazione originale). |
@@ -152,11 +152,18 @@ Ogni riga mostra lo score e i grammi apportati per ciascun macro, più un pulsan
 
 ## 🐳 Self-hosting (docker compose)
 
-Il repo include un backend **volutamente stupido**: serve l'app e salva un
-**blob opaco** per chiave su disco. Niente database, niente schema, niente
-autenticazione — è pensato per girare in **LAN / dietro Tailscale**, non esposto
-su internet. Il blob resta opaco: l'unica eccezione è il server **MCP**, che sa
-leggere e scrivere alimenti e allenamenti su richiesta di un agente.
+Il repo include un backend in **Go** che serve l'app e conserva i dati in
+**SQLite** (una riga per record). I client sincronizzano in modo **incrementale**
+(`/api/sync`) e possono ricevere gli aggiornamenti in **tempo reale** via SSE
+(`/api/events`). Niente autenticazione: è pensato per girare in **LAN / dietro
+Tailscale**, non esposto su internet.
+
+> **Fase di migrazione.** La vecchia API a blob opaco (`/api/kv`) resta attiva
+> come *vista* su SQLite: un `GET` ricostruisce il blob dai record, un `PUT` lo
+> importa record per record. Così i browser che usano ancora il client
+> precedente migrano da soli al primo sync, senza perdere dati e senza cambiare
+> nulla. Il vecchio file blob viene letto una sola volta (e conservato come
+> backup); quando tutti i client useranno `/api/sync`, `/api/kv` potrà sparire.
 
 ### Avvio rapido
 
@@ -170,31 +177,41 @@ docker compose up --build
 
 | Metodo | Path | Descrizione |
 |---|---|---|
-| `GET` | `/api/kv/{key}` | Legge il blob (header `X-Updated-At` col timestamp) |
-| `PUT` | `/api/kv/{key}` | Scrive il blob (max 8 MiB, anche gzip) |
-| `DELETE` | `/api/kv/{key}` | Elimina il blob |
+| `GET` | `/api/sync/{key}?since=TS` | Delta incrementale: record e tombstone con `updated > TS` |
+| `POST` | `/api/sync/{key}` | Invia le modifiche locali (last-write-wins) |
+| `GET` | `/api/events/{key}` | Stream **SSE** con le modifiche in tempo reale |
+| `GET` | `/api/kv/{key}` | *(compat)* Blob ricostruito dai record |
+| `PUT` | `/api/kv/{key}` | *(compat/migrazione)* Importa un blob record per record |
+| `DELETE` | `/api/kv/{key}` | *(compat)* Elimina tutti i record della chiave |
 | `POST` | `/mcp` | Server MCP (Streamable HTTP, JSON-RPC 2.0) per gli agenti |
 | `GET` | `/healthz` | Healthcheck |
 | `*` | `/` | Serve l'app statica (`index.html`) |
 
-I blob finiscono in `DATA_DIR` (un file per chiave, scrittura atomica
-temp+rename). Le chiavi sono `[A-Za-z0-9_-]{1,64}`.
+I dati finiscono in `DATA_DIR/tracker.db` (SQLite, WAL). Le chiavi sono
+`[A-Za-z0-9_-]{1,64}` e isolano i dataset tra loro.
 
-#### Compressione gzip
+#### Record e merge
 
-Il diario è JSON molto ripetitivo: un backup reale (~320 KiB) si comprime
-~20-25x, quindi la compressione è quella che rende la sync veloce.
+Ogni record è `(collection, id, data, updated, deleted)`:
 
-- **Upload**: l'app comprime il body con `CompressionStream` e manda
-  `Content-Encoding: gzip`; se il browser non lo supporta, manda JSON normale.
-- **Download**: se il client manda `Accept-Encoding: gzip` la risposta è
-  compressa (`Vary: Accept-Encoding`).
-- **Il server resta stupido**: non sa cosa c'è dentro il blob, controlla solo i
-  magic bytes `1f 8b` per capire se i byte su disco sono già gzip. Un blob
-  salvato compresso viene servito così com'è a chi accetta gzip (zero CPU) e
-  decompresso al volo per chi non lo accetta (`curl`, client vecchi).
-- Il limite di 8 MiB vale sia sul body ricevuto sia sui byte decompressi, così
-  un blob piccolo non può espandersi in una risposta enorme.
+| Collection | id | data |
+|---|---|---|
+| `entries` | data (`YYYY-MM-DD`) | peso, calorie, tipo giornata |
+| `foods` | id alimento | nome, macro per 100 g, … |
+| `diary` | data | tipo giornata + voci del diario |
+| `workouts` | id esercizio | sessione, serie, ripetizioni, … |
+| `done` | `data\0id` | spunta di un esercizio in un giorno |
+
+Il merge è **last-write-wins** sul timestamp del client; a parità vince la
+*tombstone*, altrimenti la modifica in arrivo. Salvare una modifica è una singola
+`UPSERT`: non si riscrive più tutto il blob.
+
+#### gzip
+
+La compressione è solo di trasporto: la risposta di `/api/kv` viene compressa se
+il client manda `Accept-Encoding: gzip`, e un upload gzip viene decompresso
+prima dell'import. Non c'è più un blob compresso "a riposo": lo storage è
+SQLite.
 
 ### Sync nell'app
 
@@ -223,15 +240,17 @@ L'invio è automatico e resiliente:
 - la card mostra quante **modifiche restano da inviare** e l'esito dell'ultimo
   tentativo.
 
-Il server resta un **blob store opaco**: non conosce lo schema, è l'app a
-eseguire il merge.
+> Nota: finché il client non passa alla fase successiva, l'app continua a usare
+> l'API a blob (`/api/kv`), che ora è una **vista su SQLite**. La logica di merge
+> per record resta identica; cambierà solo il trasporto (delta + SSE).
 
 ### MCP (per gli agenti)
 
 Lo stesso processo espone un server **MCP** (Model Context Protocol, Streamable
 HTTP) su `POST /mcp`, così un agente può **ispezionare e ampliare** il database
 alimenti, il programma allenamenti e il diario alimentare. Niente secondo
-processo né dipendenze: è JSON-RPC 2.0 scritto con la sola stdlib.
+processo né dipendenze aggiuntive per il protocollo: è JSON-RPC 2.0 scritto a
+mano (l'unica dipendenza del server è il driver SQLite puro-Go).
 
 | Tool | Cosa fa |
 |---|---|
@@ -246,11 +265,10 @@ processo né dipendenze: è JSON-RPC 2.0 scritto con la sola stdlib.
 | `remove_diary_item` | Rimuove una voce dal giorno |
 | `set_diary_type` | Segna il giorno come allenamento o riposo |
 
-Le scritture usano lo **stesso merge per record** dell'app: il server legge il
-blob, aggiorna il timestamp in `meta.updated` e riscrive solo la collezione
-toccata, lasciando intatti `entries`, `done` e i giorni di diario non toccati.
-Al sync successivo il dispositivo vede il nuovo cibo, esercizio o giornata come
-modifica più recente e la unisce, senza perdere le proprie.
+Le scritture MCP agiscono direttamente sui **record** in SQLite: toccano solo le
+righe interessate (un alimento, un esercizio, un giorno di diario) e ne
+pubblicano il cambio via SSE, così gli altri client si allineano subito senza
+aspettare il prossimo sync.
 
 Configurazione in un client MCP (esempio con [pi](https://pi.dev)):
 

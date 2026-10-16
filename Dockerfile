@@ -1,9 +1,11 @@
-# Multi-stage build. No CGO and no dependencies: the binary is fully static.
+# Multi-stage build. CGO stays off: modernc.org/sqlite is pure Go, so the
+# binary is still fully static and cross-compiles.
 
 # ---- build ----
 FROM golang:1.26-alpine AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
+RUN go mod download
 COPY cmd ./cmd
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/tracker ./cmd/server
 
@@ -16,7 +18,8 @@ WORKDIR /app
 COPY --from=build /out/tracker /app/tracker
 COPY index.html /app/index.html
 
-# Blobs live on the /data volume; ownership matters for the first mount.
+# The SQLite database (and any legacy blobs left to migrate) live on /data;
+# ownership matters for the first mount.
 RUN mkdir -p /data && chown -R tracker:tracker /data /app
 USER tracker
 
