@@ -21,3 +21,4 @@ bin/
 !.env.example
 /data/*
 !/data/cibi.csv
+!/data/allenamenti.csv
