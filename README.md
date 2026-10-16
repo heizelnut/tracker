@@ -200,15 +200,36 @@ In fondo all'app c'è la card **“Sincronizzazione tra dispositivi”**: impost
 l'URL del server (vuoto = stesso server che serve l'app), una **chiave**
 (default `default`) e attiva **Auto-sync**.
 
-- ogni modifica viene inviata al server con debounce di 1,5 s;
-- all'avvio l'app confronta `X-Updated-At` con l'ultimo salvataggio locale e
-  scarica la versione più recente (last-write-wins).
+La sincronizzazione è **per record**, non a blob intero:
+
+- ogni record (peso/calorie per data, giornata di diario, alimento o esercizio
+  per id, singola spunta di allenamento) porta un timestamp di ultima modifica;
+- al sync l'app scarica il blob, **unisce** locale e remoto record per record
+  (vince la modifica più recente) e rispedisce solo se serve;
+- un dispositivo rimasto indietro **non può più cancellare** le giornate
+  registrate su un altro dispositivo: le unisce;
+- le eliminazioni viaggiano come *tombstone*, così non vengono resuscitate da
+  una copia vecchia.
+
+L'invio è automatico e resiliente:
+
+- debounce breve su ogni modifica, con **retry** a backoff (3 s → max 5 min);
+- si riattiva quando il dispositivo torna **online**, quando l'app torna in
+  primo piano e ogni minuto mentre è visibile;
+- un tentativo best-effort viene fatto anche alla chiusura della pagina
+  (`pagehide`, con `keepalive`);
+- la card mostra quante **modifiche restano da inviare** e l'esito dell'ultimo
+  tentativo.
+
+Il server resta un **blob store opaco**: non conosce lo schema, è l'app a
+eseguire il merge.
 
 ### Sviluppo
 
 ```bash
-make run     # :8080, serve ./index.html, blob in ./data
-make test    # test Go
+make run      # :8080, serve ./index.html, blob in ./data
+make test     # test Go + JS (merge/sync per-record)
+make test-js  # solo i test JS del sync
 make image REGISTRY=registry.lab.heiz.cc   # build + push (linux/arm64)
 ```
 

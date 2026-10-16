@@ -2,7 +2,7 @@
 BINARY ?= tracker
 PLATFORM ?= linux/arm64
 
-.PHONY: build run test vet fmt docker-up docker-down image
+.PHONY: build run test test-go test-js vet fmt docker-up docker-down image
 
 ## build: compile the server binary
 build:
@@ -12,9 +12,16 @@ build:
 run:
 	PORT=8080 DATA_DIR=./data STATIC_DIR=. go run ./cmd/server
 
-## test: run the test suite
-test:
+## test: run the full suite (Go server + JS sync/merge)
+test: test-go test-js
+
+## test-go: run the Go server test suite
+test-go:
 	go test ./...
+
+## test-js: run the JS sync/merge tests (needs node)
+test-js:
+	node --test tests/*.test.mjs
 
 ## vet: static analysis
 vet:
