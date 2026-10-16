@@ -333,3 +333,143 @@ func TestMCPRejectsMalformedJSON(t *testing.T) {
 		t.Fatalf("parse error not reported: %v", out)
 	}
 }
+
+// --- diary ------------------------------------------------------------------
+
+// mcpToolError runs a tool expected to fail and returns its error text.
+func mcpToolError(t *testing.T, srv *httptest.Server, name string, args map[string]any) string {
+	t.Helper()
+	code, resp := mcpPost(t, srv, map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": name, "arguments": args},
+	})
+	if code != http.StatusOK {
+		t.Fatalf("%s: status %d", name, code)
+	}
+	if resp["error"] != nil {
+		t.Fatalf("%s: expected a tool error, got rpc error %v", name, resp["error"])
+	}
+	result := resp["result"].(map[string]any)
+	if result["isError"] != true {
+		t.Fatalf("%s: expected isError, got %v", name, result)
+	}
+	content := result["content"].([]any)
+	return content[0].(map[string]any)["text"].(string)
+}
+
+func TestMCPDiaryAddUpdateRemove(t *testing.T) {
+	srv := newTestServer(t)
+	mcpCall(t, srv, "add_food", map[string]any{"name": "Pollo", "p": 23, "g": 2, "c": 0})
+
+	added := mcpCall(t, srv, "add_diary_item", map[string]any{"date": "2026-04-01", "food": "pollo", "grams": 200})
+	item := added["item"].(map[string]any)
+	if got := item["p"].(float64); got != 46 { // 23 * 200/100
+		t.Fatalf("p = %v, want 46", got)
+	}
+	if got := item["kcal"].(float64); got != 220 { // (23*4 + 2*9) * 2
+		t.Fatalf("kcal = %v, want 220", got)
+	}
+	if added["type"] != "training" {
+		t.Fatalf("default type = %v, want training", added["type"])
+	}
+	id := item["id"].(string)
+
+	updated := mcpCall(t, srv, "update_diary_item", map[string]any{"date": "2026-04-01", "item": id, "grams": 100})
+	if got := updated["item"].(map[string]any)["p"].(float64); got != 23 {
+		t.Fatalf("updated p = %v, want 23", got)
+	}
+
+	// The day and its per-record stamp must reach the blob.
+	blob := getBlob(t, srv, "default")
+	day := blob["diary"].(map[string]any)["2026-04-01"].(map[string]any)
+	if len(day["items"].([]any)) != 1 {
+		t.Fatalf("items = %v", day["items"])
+	}
+	stamps := blob["meta"].(map[string]any)["updated"].(map[string]any)["diary"].(map[string]any)
+	if _, ok := stamps["2026-04-01"]; !ok {
+		t.Fatalf("diary day not stamped: %v", stamps)
+	}
+
+	// Removing by food name (not id) works too.
+	removed := mcpCall(t, srv, "remove_diary_item", map[string]any{"date": "2026-04-01", "item": "pollo"})
+	if removed["removed"].(map[string]any)["id"].(string) != id {
+		t.Fatal("removed the wrong item")
+	}
+	if got := removed["totals"].(map[string]any)["p"].(float64); got != 0 {
+		t.Fatalf("totals after remove = %v", removed["totals"])
+	}
+}
+
+func TestMCPListDiary(t *testing.T) {
+	srv := newTestServer(t)
+	mcpCall(t, srv, "add_food", map[string]any{"name": "Riso", "p": 7, "g": 1, "c": 78})
+	mcpCall(t, srv, "add_diary_item", map[string]any{"date": "2026-04-01", "food": "Riso", "grams": 100})
+	mcpCall(t, srv, "add_diary_item", map[string]any{"date": "2026-04-03", "food": "Riso", "grams": 50})
+	mcpCall(t, srv, "set_diary_type", map[string]any{"date": "2026-04-03", "type": "rest"})
+
+	one := mcpCall(t, srv, "list_diary", map[string]any{"date": "2026-04-03"})
+	if one["exists"] != true || one["type"] != "rest" {
+		t.Fatalf("day = %v", one)
+	}
+	if len(one["items"].([]any)) != 1 {
+		t.Fatalf("items = %v", one["items"])
+	}
+
+	missing := mcpCall(t, srv, "list_diary", map[string]any{"date": "2026-04-02"})
+	if missing["exists"] != false {
+		t.Fatalf("missing day should report exists=false: %v", missing)
+	}
+
+	list := mcpCall(t, srv, "list_diary", map[string]any{})
+	if list["count"].(float64) != 2 {
+		t.Fatalf("count = %v", list["count"])
+	}
+	days := list["days"].([]any)
+	if days[0].(map[string]any)["date"] != "2026-04-03" {
+		t.Fatalf("days should be newest-first: %v", days)
+	}
+
+	rng := mcpCall(t, srv, "list_diary", map[string]any{"from": "2026-04-02"})
+	if rng["count"].(float64) != 1 {
+		t.Fatalf("range count = %v", rng["count"])
+	}
+}
+
+func TestMCPDiaryDefaultsToEntryType(t *testing.T) {
+	srv := newTestServer(t)
+	seed := `{"entries":[{"id":"e1","date":"2026-05-01","weight":70,"calories":1600,"type":"rest"}],` +
+		`"foods":[],"diary":{},"workouts":[],"done":{}}`
+	if resp, _ := do(t, http.MethodPut, srv.URL+"/api/kv/default", seed); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("seed put status = %d", resp.StatusCode)
+	}
+	mcpCall(t, srv, "add_food", map[string]any{"name": "Mela", "p": 0.3, "g": 0.2, "c": 14})
+	added := mcpCall(t, srv, "add_diary_item", map[string]any{"date": "2026-05-01", "food": "Mela", "grams": 150})
+	if added["type"] != "rest" {
+		t.Fatalf("type = %v, want rest (from the matching entry)", added["type"])
+	}
+
+	// A brand-new day set to an explicit type keeps it.
+	res := mcpCall(t, srv, "set_diary_type", map[string]any{"date": "2026-05-02", "type": "training"})
+	if res["type"] != "training" {
+		t.Fatalf("type = %v", res["type"])
+	}
+}
+
+func TestMCPDiaryErrors(t *testing.T) {
+	srv := newTestServer(t)
+	if msg := mcpToolError(t, srv, "add_diary_item", map[string]any{"date": "2026-04-01", "food": "nope", "grams": 100}); !strings.Contains(msg, "not found") {
+		t.Fatalf("unknown food msg = %q", msg)
+	}
+	if msg := mcpToolError(t, srv, "update_diary_item", map[string]any{"date": "2026-04-01", "item": "x", "grams": 1}); !strings.Contains(msg, "no diary") {
+		t.Fatalf("missing diary msg = %q", msg)
+	}
+	if msg := mcpToolError(t, srv, "set_diary_type", map[string]any{"date": "2026-04-01", "type": "cheat"}); !strings.Contains(msg, "training") {
+		t.Fatalf("bad type msg = %q", msg)
+	}
+	if msg := mcpToolError(t, srv, "add_diary_item", map[string]any{"date": "2026-04-01", "food": "x", "grams": 0}); !strings.Contains(msg, "grams") {
+		t.Fatalf("bad grams msg = %q", msg)
+	}
+	if msg := mcpToolError(t, srv, "add_diary_item", map[string]any{"food": "x", "grams": 10}); !strings.Contains(msg, "date") {
+		t.Fatalf("missing date msg = %q", msg)
+	}
+}

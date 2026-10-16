@@ -46,17 +46,20 @@ const defaultMCPKey = "default"
 const mcpInstructions = `Tools to inspect and extend the Ricomposizione tracker.
 
 The tracker stores everything (weight log, food diary, food database, workout
-program) in one synced blob. This server exposes the two collections that are
+program) in one synced blob. This server exposes the collections that are
 useful to edit from outside the app:
 
   - foods    — the food database. Macros are per 100 g.
   - workouts — the training program, split into sessions (days).
+  - diary    — what was eaten, day by day: one record per date holding the day
+               type (training/rest) and the list of foods with their grams.
 
 Read tools return the current state. Write tools add or update a single record
 and return it. Writes are merged per record with the app (a newer timestamp
-wins), so a new food or exercise shows up on the device at its next sync —
-and the device's own edits are not lost. Foods are upserted by name, workouts
-by (session, exercise name).
+wins), so a new food, exercise or diary day shows up on the device at its next
+sync — and the device's own edits are not lost. Foods are upserted by name,
+workouts by (session, exercise name); the diary is keyed by date, and the items
+inside a day are addressed by their id or food name.
 
 Use "key" to target a different sync key/blob; it defaults to "default".`
 
@@ -298,6 +301,84 @@ func mcpTools() []map[string]any {
 			},
 			"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
 		},
+		{
+			"name":        "list_diary",
+			"title":       "Read the food diary",
+			"description": "Read the diary day by day. With `date` (YYYY-MM-DD) returns that day's type, items (id, food, grams, macros) and totals. Without it, lists recent days as summaries (date, type, item count, totals), newest first, optionally filtered by `from`/`to`.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"date":  str("Exact day to read, YYYY-MM-DD."),
+					"from":  str("Only days on or after this date (YYYY-MM-DD)."),
+					"to":    str("Only days on or before this date (YYYY-MM-DD)."),
+					"limit": intProp("Maximum days to list when `date` is omitted (default 30).", 1, 1000),
+					"key":   keyProp,
+				},
+			},
+			"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
+		},
+		{
+			"name":        "add_diary_item",
+			"title":       "Add a food to a diary day",
+			"description": "Add a food to a day's diary, creating the day if needed. `food` is a food id, an exact name or an unambiguous substring from the food database; the item's macros are computed from the food and `grams`. Returns the new item (keep its id to update or remove it later) and the day totals.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"date":  str("Day to update, YYYY-MM-DD. Required."),
+					"food":  str("Food id, exact name or substring. Required."),
+					"grams": num("Portion in grams. Required."),
+					"key":   keyProp,
+				},
+				"required": []string{"date", "food", "grams"},
+			},
+			"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
+		},
+		{
+			"name":        "update_diary_item",
+			"title":       "Update a diary item",
+			"description": "Change the grams of an item already in a day's diary and recompute its macros. Identify the item by its id or by food name (first match). Returns the updated item and the day totals.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"date":  str("Day of the item, YYYY-MM-DD. Required."),
+					"item":  str("Item id or food name. Required."),
+					"grams": num("New portion in grams. Required."),
+					"key":   keyProp,
+				},
+				"required": []string{"date", "item", "grams"},
+			},
+			"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+		},
+		{
+			"name":        "remove_diary_item",
+			"title":       "Remove a diary item",
+			"description": "Remove one item from a day's diary, identified by item id or food name (first match). Returns the removed item and the new day totals.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"date": str("Day of the item, YYYY-MM-DD. Required."),
+					"item": str("Item id or food name. Required."),
+					"key":  keyProp,
+				},
+				"required": []string{"date", "item"},
+			},
+			"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false},
+		},
+		{
+			"name":        "set_diary_type",
+			"title":       "Set a diary day type",
+			"description": "Mark a diary day as a training or rest day, creating the day if needed. The day type drives the calorie/macro targets.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"date": str("Day to mark, YYYY-MM-DD. Required."),
+					"type": map[string]any{"type": "string", "enum": []string{"training", "rest"}, "description": "Day type."},
+					"key":  keyProp,
+				},
+				"required": []string{"date", "type"},
+			},
+			"annotations": map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
+		},
 	}
 }
 
@@ -315,6 +396,16 @@ func (s *server) runTool(name string, args map[string]any) (any, error) {
 		return s.toolListWorkouts(args)
 	case "add_workout":
 		return s.toolAddWorkout(args)
+	case "list_diary":
+		return s.toolListDiary(args)
+	case "add_diary_item":
+		return s.toolAddDiaryItem(args)
+	case "update_diary_item":
+		return s.toolUpdateDiaryItem(args)
+	case "remove_diary_item":
+		return s.toolRemoveDiaryItem(args)
+	case "set_diary_type":
+		return s.toolSetDiaryType(args)
 	default:
 		return nil, fmt.Errorf("%w: %s", errUnknownTool, name)
 	}
@@ -599,6 +690,283 @@ func (s *server) toolAddWorkout(args map[string]any) (any, error) {
 	return map[string]any{"created": created, "workout": workout}, nil
 }
 
+// --- Diary -------------------------------------------------------------------
+
+// toolListDiary reads a single day in full, or lists recent days as summaries.
+func (s *server) toolListDiary(args map[string]any) (any, error) {
+	key, err := mcpKey(args)
+	if err != nil {
+		return nil, err
+	}
+	state, err := s.loadState(key)
+	if err != nil {
+		return nil, err
+	}
+	diary, err := decodeDiary(state["diary"])
+	if err != nil {
+		return nil, err
+	}
+
+	if date := argString(args, "date"); date != "" {
+		day := diaryDay(diary, date)
+		if day == nil {
+			return map[string]any{
+				"date":   date,
+				"exists": false,
+				"type":   entryType(state, date),
+				"items":  []map[string]any{},
+				"totals": diaryTotals(nil),
+			}, nil
+		}
+		items := diaryItems(day)
+		return map[string]any{
+			"date":   date,
+			"exists": true,
+			"type":   getString(day, "type"),
+			"items":  items,
+			"totals": diaryTotals(items),
+		}, nil
+	}
+
+	from, to := argString(args, "from"), argString(args, "to")
+	limit := argInt(args, "limit", 30)
+	dates := make([]string, 0, len(diary))
+	for date := range diary {
+		if (from != "" && date < from) || (to != "" && date > to) {
+			continue
+		}
+		dates = append(dates, date)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(dates)))
+	if limit > 0 && len(dates) > limit {
+		dates = dates[:limit]
+	}
+	days := make([]map[string]any, 0, len(dates))
+	for _, date := range dates {
+		day := diaryDay(diary, date)
+		items := diaryItems(day)
+		days = append(days, map[string]any{
+			"date":      date,
+			"type":      getString(day, "type"),
+			"itemCount": len(items),
+			"totals":    diaryTotals(items),
+		})
+	}
+	return map[string]any{"count": len(days), "days": days}, nil
+}
+
+// toolAddDiaryItem appends a food (with its computed macros) to a day.
+func (s *server) toolAddDiaryItem(args map[string]any) (any, error) {
+	key, err := mcpKey(args)
+	if err != nil {
+		return nil, err
+	}
+	date, err := requireDate(args)
+	if err != nil {
+		return nil, err
+	}
+	ref := argString(args, "food")
+	if ref == "" {
+		return nil, errors.New("food is required (name or id)")
+	}
+	grams, err := requireGrams(args)
+	if err != nil {
+		return nil, err
+	}
+
+	var result map[string]any
+	err = s.mutateState(key, func(state map[string]json.RawMessage) error {
+		foods, err := decodeObjects(state["foods"])
+		if err != nil {
+			return err
+		}
+		food := findFood(foods, ref)
+		if food == nil {
+			return fmt.Errorf("food %q not found: add it with add_food first", ref)
+		}
+		diary, err := decodeDiary(state["diary"])
+		if err != nil {
+			return err
+		}
+		day := ensureDiaryDay(diary, state, date)
+		items := append(diaryItems(day), makeDiaryItem(food, grams))
+		day["items"] = items
+		if err := setRaw(state, "diary", diary); err != nil {
+			return err
+		}
+		if err := stampMeta(state, "diary", date); err != nil {
+			return err
+		}
+		result = map[string]any{
+			"date":   date,
+			"type":   getString(day, "type"),
+			"item":   items[len(items)-1],
+			"totals": diaryTotals(items),
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// toolUpdateDiaryItem changes an item's grams and recomputes its macros.
+func (s *server) toolUpdateDiaryItem(args map[string]any) (any, error) {
+	key, err := mcpKey(args)
+	if err != nil {
+		return nil, err
+	}
+	date, err := requireDate(args)
+	if err != nil {
+		return nil, err
+	}
+	ref := argString(args, "item")
+	if ref == "" {
+		return nil, errors.New("item is required (item id or food name)")
+	}
+	grams, err := requireGrams(args)
+	if err != nil {
+		return nil, err
+	}
+
+	var result map[string]any
+	err = s.mutateState(key, func(state map[string]json.RawMessage) error {
+		diary, err := decodeDiary(state["diary"])
+		if err != nil {
+			return err
+		}
+		day := diaryDay(diary, date)
+		if day == nil {
+			return fmt.Errorf("no diary for %s", date)
+		}
+		items := diaryItems(day)
+		idx := findDiaryItem(items, ref)
+		if idx < 0 {
+			return fmt.Errorf("item %q not found on %s", ref, date)
+		}
+		foods, err := decodeObjects(state["foods"])
+		if err != nil {
+			return err
+		}
+		recalcDiaryItem(items[idx], findFood(foods, getString(items[idx], "foodId")), grams)
+		day["items"] = items
+		if err := setRaw(state, "diary", diary); err != nil {
+			return err
+		}
+		if err := stampMeta(state, "diary", date); err != nil {
+			return err
+		}
+		result = map[string]any{
+			"date":   date,
+			"type":   getString(day, "type"),
+			"item":   items[idx],
+			"totals": diaryTotals(items),
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// toolRemoveDiaryItem drops one item from a day.
+func (s *server) toolRemoveDiaryItem(args map[string]any) (any, error) {
+	key, err := mcpKey(args)
+	if err != nil {
+		return nil, err
+	}
+	date, err := requireDate(args)
+	if err != nil {
+		return nil, err
+	}
+	ref := argString(args, "item")
+	if ref == "" {
+		return nil, errors.New("item is required (item id or food name)")
+	}
+
+	var result map[string]any
+	err = s.mutateState(key, func(state map[string]json.RawMessage) error {
+		diary, err := decodeDiary(state["diary"])
+		if err != nil {
+			return err
+		}
+		day := diaryDay(diary, date)
+		if day == nil {
+			return fmt.Errorf("no diary for %s", date)
+		}
+		items := diaryItems(day)
+		idx := findDiaryItem(items, ref)
+		if idx < 0 {
+			return fmt.Errorf("item %q not found on %s", ref, date)
+		}
+		removed := items[idx]
+		items = append(items[:idx], items[idx+1:]...)
+		day["items"] = items
+		if err := setRaw(state, "diary", diary); err != nil {
+			return err
+		}
+		if err := stampMeta(state, "diary", date); err != nil {
+			return err
+		}
+		result = map[string]any{
+			"date":    date,
+			"removed": removed,
+			"totals":  diaryTotals(items),
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// toolSetDiaryType marks a day as training or rest, creating it when missing.
+func (s *server) toolSetDiaryType(args map[string]any) (any, error) {
+	key, err := mcpKey(args)
+	if err != nil {
+		return nil, err
+	}
+	date, err := requireDate(args)
+	if err != nil {
+		return nil, err
+	}
+	dayType := argString(args, "type")
+	if dayType != "training" && dayType != "rest" {
+		return nil, errors.New(`type must be "training" or "rest"`)
+	}
+
+	var result map[string]any
+	err = s.mutateState(key, func(state map[string]json.RawMessage) error {
+		diary, err := decodeDiary(state["diary"])
+		if err != nil {
+			return err
+		}
+		day := ensureDiaryDay(diary, state, date)
+		day["type"] = dayType
+		items := diaryItems(day)
+		if err := setRaw(state, "diary", diary); err != nil {
+			return err
+		}
+		if err := stampMeta(state, "diary", date); err != nil {
+			return err
+		}
+		result = map[string]any{
+			"date":      date,
+			"type":      dayType,
+			"itemCount": len(items),
+			"totals":    diaryTotals(items),
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // --- Blob access -------------------------------------------------------------
 
 // readPlain returns the decoded JSON bytes for key, decompressing a gzip blob.
@@ -710,6 +1078,213 @@ func decodeMapKeys(raw json.RawMessage) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+func requireDate(args map[string]any) (string, error) {
+	date := argString(args, "date")
+	if date == "" {
+		return "", errors.New("date is required (YYYY-MM-DD)")
+	}
+	return date, nil
+}
+
+func requireGrams(args map[string]any) (float64, error) {
+	grams, ok := argNumber(args, "grams")
+	if !ok || grams <= 0 || math.IsNaN(grams) || math.IsInf(grams, 0) {
+		return 0, errors.New("grams must be a positive number")
+	}
+	return grams, nil
+}
+
+// decodeDiary reads the diary map. Days are kept as generic maps so fields the
+// MCP does not touch survive a round-trip.
+func decodeDiary(raw json.RawMessage) (map[string]any, error) {
+	if len(raw) == 0 {
+		return map[string]any{}, nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, fmt.Errorf("invalid diary: %w", err)
+	}
+	if m == nil {
+		m = map[string]any{}
+	}
+	return m, nil
+}
+
+func diaryDay(diary map[string]any, date string) map[string]any {
+	if d, ok := diary[date].(map[string]any); ok {
+		return d
+	}
+	return nil
+}
+
+func diaryItems(day map[string]any) []map[string]any {
+	if day == nil {
+		return nil
+	}
+	switch v := day["items"].(type) {
+	case []map[string]any:
+		return v
+	case []any:
+		out := make([]map[string]any, 0, len(v))
+		for _, e := range v {
+			if m, ok := e.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// ensureDiaryDay returns the day, creating it with the type implied by the
+// matching weight entry (training by default) when it does not exist yet.
+func ensureDiaryDay(diary map[string]any, state map[string]json.RawMessage, date string) map[string]any {
+	if day := diaryDay(diary, date); day != nil {
+		return day
+	}
+	day := map[string]any{"type": entryType(state, date), "items": []map[string]any{}}
+	diary[date] = day
+	return day
+}
+
+// entryType mirrors the app: a diary day defaults to the type of the weight
+// entry for that date, or "training".
+func entryType(state map[string]json.RawMessage, date string) string {
+	entries, _ := decodeObjects(state["entries"])
+	for _, e := range entries {
+		if getString(e, "date") == date {
+			if t := getString(e, "type"); t != "" {
+				return t
+			}
+		}
+	}
+	return "training"
+}
+
+// findFood resolves a food reference: id, exact name, then name substring.
+func findFood(foods []map[string]any, ref string) map[string]any {
+	if ref == "" {
+		return nil
+	}
+	for _, f := range foods {
+		if getString(f, "id") == ref {
+			return f
+		}
+	}
+	for _, f := range foods {
+		if strings.EqualFold(getString(f, "name"), ref) {
+			return f
+		}
+	}
+	lower := strings.ToLower(ref)
+	for _, f := range foods {
+		if strings.Contains(strings.ToLower(getString(f, "name")), lower) {
+			return f
+		}
+	}
+	return nil
+}
+
+// findDiaryItem resolves an item inside a day: id, exact name, then substring.
+func findDiaryItem(items []map[string]any, ref string) int {
+	if ref == "" {
+		return -1
+	}
+	for i, it := range items {
+		if getString(it, "id") == ref {
+			return i
+		}
+	}
+	for i, it := range items {
+		if strings.EqualFold(getString(it, "name"), ref) {
+			return i
+		}
+	}
+	lower := strings.ToLower(ref)
+	for i, it := range items {
+		if strings.Contains(strings.ToLower(getString(it, "name")), lower) {
+			return i
+		}
+	}
+	return -1
+}
+
+// makeDiaryItem denormalises a food into a diary item, exactly like the app
+// (protein/fat/carbs to one decimal, calories rounded to an integer).
+func makeDiaryItem(food map[string]any, grams float64) map[string]any {
+	return map[string]any{
+		"id":     newRecordID(),
+		"foodId": getString(food, "id"),
+		"name":   getString(food, "name"),
+		"grams":  grams,
+		"p":      round1(getFloat(food, "p") * grams / 100),
+		"g":      round1(getFloat(food, "g") * grams / 100),
+		"c":      round1(getFloat(food, "c") * grams / 100),
+		"kcal":   math.Round(getFloat(food, "kcal") * grams / 100),
+	}
+}
+
+// recalcDiaryItem rewrites an item's macros for a new weight. It prefers the
+// current food's per-100 g values and, when the food is gone, back-computes them
+// from the item's own numbers (as the app's recalcItem does).
+func recalcDiaryItem(item, food map[string]any, grams float64) {
+	per100 := func(k string) float64 {
+		if food != nil {
+			return getFloat(food, k)
+		}
+		if old := getFloat(item, "grams"); old > 0 {
+			return getFloat(item, k) / old * 100
+		}
+		return 0
+	}
+	item["grams"] = grams
+	item["p"] = round1(per100("p") * grams / 100)
+	item["g"] = round1(per100("g") * grams / 100)
+	item["c"] = round1(per100("c") * grams / 100)
+	item["kcal"] = math.Round(per100("kcal") * grams / 100)
+	if food != nil {
+		item["foodId"] = getString(food, "id")
+		item["name"] = getString(food, "name")
+	}
+}
+
+func diaryTotals(items []map[string]any) map[string]any {
+	var kcal, p, g, c float64
+	for _, it := range items {
+		kcal += getFloat(it, "kcal")
+		p += getFloat(it, "p")
+		g += getFloat(it, "g")
+		c += getFloat(it, "c")
+	}
+	return map[string]any{"kcal": math.Round(kcal), "p": round1(p), "g": round1(g), "c": round1(c)}
+}
+
+func round1(v float64) float64 { return math.Round(v*10) / 10 }
+
+func getFloat(m map[string]any, key string) float64 {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return 0
+	}
+	switch t := v.(type) {
+	case float64:
+		return t
+	case float32:
+		return float64(t)
+	case int:
+		return float64(t)
+	case int64:
+		return float64(t)
+	case json.Number:
+		f, _ := t.Float64()
+		return f
+	case string:
+		f, _ := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(t), ",", "."), 64)
+		return f
+	}
+	return 0
 }
 
 func setRaw(state map[string]json.RawMessage, key string, v any) error {

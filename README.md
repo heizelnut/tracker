@@ -230,8 +230,8 @@ eseguire il merge.
 
 Lo stesso processo espone un server **MCP** (Model Context Protocol, Streamable
 HTTP) su `POST /mcp`, così un agente può **ispezionare e ampliare** il database
-alimenti e il programma allenamenti. Niente secondo processo né dipendenze: è
-JSON-RPC 2.0 scritto con la sola stdlib.
+alimenti, il programma allenamenti e il diario alimentare. Niente secondo
+processo né dipendenze: è JSON-RPC 2.0 scritto con la sola stdlib.
 
 | Tool | Cosa fa |
 |---|---|
@@ -240,12 +240,17 @@ JSON-RPC 2.0 scritto con la sola stdlib.
 | `add_food` | Aggiunge o aggiorna un alimento (upsert per nome) |
 | `list_workouts` | Elenca gli esercizi (filtro per sessione/nome) |
 | `add_workout` | Aggiunge o aggiorna un esercizio (upsert per sessione+nome) |
+| `list_diary` | Legge il diario: un giorno completo o l'elenco dei giorni recenti |
+| `add_diary_item` | Aggiunge un alimento a un giorno (macro calcolate dai grammi) |
+| `update_diary_item` | Cambia i grammi di una voce e ricalcola le macro |
+| `remove_diary_item` | Rimuove una voce dal giorno |
+| `set_diary_type` | Segna il giorno come allenamento o riposo |
 
 Le scritture usano lo **stesso merge per record** dell'app: il server legge il
 blob, aggiorna il timestamp in `meta.updated` e riscrive solo la collezione
-toccata — `entries`, `diary` e `done` passano intatti. Al sync successivo il
-dispositivo vede il nuovo cibo/esercizio come modifica più recente e lo unisce,
-senza perdere le proprie.
+toccata, lasciando intatti `entries`, `done` e i giorni di diario non toccati.
+Al sync successivo il dispositivo vede il nuovo cibo, esercizio o giornata come
+modifica più recente e la unisce, senza perdere le proprie.
 
 Configurazione in un client MCP (esempio con [pi](https://pi.dev)):
 

@@ -152,3 +152,37 @@ test('l\'upsert MCP non duplica e il blob resta valido', async (t) => {
   const list = await mcpCall(base, 'list_foods', {query: 'riso'});
   assert.equal(list.count, 1, 'l\'upsert non deve duplicare');
 });
+
+test('le voci di diario aggiunte via MCP arrivano al dispositivo', async (t) => {
+  const base = await withServer(t);
+
+  // Il dispositivo ha una giornata registrata e un diario locale.
+  let phone = device([{date: '2026-04-10', weight: 71}]);
+  phone.diary['2026-04-10'] = {type: 'training', items: []};
+  phone = (await syncDevice(base, 'default', phone)).state;
+
+  // L'agente aggiunge un alimento al database e lo mette nel diario.
+  await mcpCall(base, 'add_food', {name: 'Pollo MCP', p: 23, g: 2, c: 0});
+  const added = await mcpCall(base, 'add_diary_item', {date: '2026-04-10', food: 'Pollo MCP', grams: 200});
+  assert.equal(added.item.p, 46);
+  assert.equal(added.totals.p, 46);
+
+  // Il dispositivo risincronizza e deve vedere la voce.
+  const synced = await syncDevice(base, 'default', phone);
+  assert.equal(synced.localChanged, true, 'il dispositivo deve accorgersi della modifica');
+  const day = synced.state.diary['2026-04-10'];
+  assert.ok(day, 'manca la giornata di diario');
+  assert.equal(day.items.length, 1, 'manca la voce di diario');
+  assert.equal(day.items[0].p, 46);
+
+  // Un aggiornamento dei grammi deve propagarsi al giro successivo.
+  const updated = await mcpCall(base, 'update_diary_item', {date: '2026-04-10', item: added.item.id, grams: 100});
+  assert.equal(updated.item.p, 23);
+  const again = await syncDevice(base, 'default', synced.state);
+  assert.equal(again.state.diary['2026-04-10'].items[0].p, 23);
+
+  // E anche la rimozione.
+  await mcpCall(base, 'remove_diary_item', {date: '2026-04-10', item: 'Pollo MCP'});
+  const afterRemove = await syncDevice(base, 'default', again.state);
+  assert.equal(afterRemove.state.diary['2026-04-10'].items.length, 0);
+});
